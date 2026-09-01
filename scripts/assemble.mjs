@@ -13,6 +13,7 @@ import {
 } from 'node:fs'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { assertWindowsX64Executable } from './windows-pe.mjs'
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const versions = JSON.parse(readFileSync(join(repositoryRoot, 'versions.json'), 'utf8'))
@@ -91,6 +92,9 @@ const pluginCommit = execFileSync('git', ['rev-parse', 'HEAD'], {
 const pluginDirty = execFileSync('git', ['status', '--short'], {
   cwd: args.plugin, encoding: 'utf8',
 }).trim().length > 0
+const sourceNodeExecutable = join(args['node-dir'], 'node.exe')
+if (!existsSync(sourceNodeExecutable)) throw new Error('Node.js 目录中缺少 node.exe。')
+assertWindowsX64Executable(sourceNodeExecutable, '待打包的 Node.js')
 
 rmSync(args.out, { recursive: true, force: true })
 mkdirSync(args.out, { recursive: true })
@@ -174,6 +178,7 @@ const dshEntry = join(
 if (!existsSync(nodeExecutable) || !existsSync(dshEntry)) {
   throw new Error('组装后的 Node 或 DSH 入口缺失。')
 }
+assertWindowsX64Executable(nodeExecutable, '组装后的 Node.js')
 chmodSync(join(args.out, 'app', 'launcher.mjs'), 0o755)
 const materializedLinks = materializeLinks(args.out)
 if (materializedLinks) console.log(`已实体化 ${materializedLinks} 个运行时链接。`)

@@ -1,6 +1,10 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { closeSync, mkdtempSync, openSync, rmSync, writeSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { mergeProfileManifest, parseDshUrl, redactToken } from '../src/portable.mjs'
+import { assertWindowsX64Executable } from '../scripts/windows-pe.mjs'
 
 test('解析 alpha.1 Host 启动 URL，并在日志中隐藏 token', () => {
   const line = 'Open http://127.0.0.1:43189/?token=Abc_123-xyz now'
@@ -25,4 +29,45 @@ test('合并 profile 时保留第三方 bundle，并固定托管插件', () => {
     'prts-terrarchive',
   ])
   assert.equal(merged.dsh.profile.patchReload, 'live')
+})
+
+test('拒绝把 Linux ELF 伪装成 Windows node.exe', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'prts-pe-test-'))
+  const executable = join(directory, 'node.exe')
+  const fd = openSync(executable, 'w')
+  try {
+    writeSync(fd, Buffer.from([0x7f, 0x45, 0x4c, 0x46]))
+    writeSync(fd, Buffer.alloc(60))
+  } finally {
+    closeSync(fd)
+  }
+  try {
+    assert.throws(
+      () => assertWindowsX64Executable(executable, 'Node.js'),
+      /不是 Windows PE 文件/u,
+    )
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+test('接受 Windows x64 PE 文件头', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'prts-pe-test-'))
+  const executable = join(directory, 'node.exe')
+  const header = Buffer.alloc(70)
+  header.write('MZ', 0, 'ascii')
+  header.writeUInt32LE(64, 0x3c)
+  header.write('PE\0\0', 64, 'binary')
+  header.writeUInt16LE(0x8664, 68)
+  const fd = openSync(executable, 'w')
+  try {
+    writeSync(fd, header)
+  } finally {
+    closeSync(fd)
+  }
+  try {
+    assert.doesNotThrow(() => assertWindowsX64Executable(executable, 'Node.js'))
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
 })

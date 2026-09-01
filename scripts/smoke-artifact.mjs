@@ -2,12 +2,14 @@ import { spawn } from 'node:child_process'
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { delimiter, dirname, join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
+import { assertWindowsX64Executable } from './windows-pe.mjs'
 
 const artifact = resolve(process.argv[2] ?? '')
 if (!artifact || !existsSync(join(artifact, 'release-manifest.json'))) {
   throw new Error('用法：node scripts/smoke-artifact.mjs <artifact-directory>')
 }
 const node = join(artifact, 'runtime', 'node', 'node.exe')
+assertWindowsX64Executable(node, '发行包中的 Node.js')
 const launcher = join(artifact, 'app', 'launcher.mjs')
 const dsh = join(
   artifact, 'runtime', 'dsh', 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js')

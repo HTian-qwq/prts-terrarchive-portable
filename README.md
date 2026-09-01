@@ -75,7 +75,10 @@ npm test
 ```
 
 完整组装必须在 Windows runner 上完成，因为 DSH 包含平台相关依赖。Linux/macOS 本地开发
-主要验证启动器纯函数和构建脚本语法。
+主要验证启动器纯函数和构建脚本语法。名称带 `local-smoke` 的本地产物不是 Windows
+发行包，不得复制到 Windows 使用；可供测试的 ZIP 必须来自 Windows GitHub Actions，且
+文件名为 `PRTS-Terrarchive-Portable-windows-x64.zip`。组装和冒烟脚本都会校验内置
+`node.exe` 的 Windows PE x64 文件头，防止错误平台的运行时混入发行包。
 
 ## 许可边界
 
