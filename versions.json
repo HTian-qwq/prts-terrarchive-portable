@@ -2,6 +2,11 @@
   "portable": "0.1.0-alpha.1",
   "node": "22.19.0",
   "pnpm": "11.7.0",
+  "desktop": {
+    "framework": ".NET 10.0.11",
+    "dotnetSdk": "10.0.400",
+    "webView2Sdk": "1.0.4191.47"
+  },
   "dsh": {
     "tag": "dsh-v0.1.2-alpha.1",
     "commit": "cd5ef8148158c3a752a658978873241fdf8e2bbc",
@@ -9,6 +14,6 @@
   },
   "plugin": {
     "repository": "HTian-qwq/prts-terrarchive",
-    "ref": "1e07aa2404d93a74dc3c41b0fe1ddf80531f9551"
+    "ref": "33620153712ab80a32df1e80406c1394f64550ce"
   }
 }

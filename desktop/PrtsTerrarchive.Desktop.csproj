@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.17763.0</TargetFramework>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <UseWindowsForms>true</UseWindowsForms>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>PRTS Terrarchive</AssemblyName>
+    <RootNamespace>PrtsTerrarchive.Desktop</RootNamespace>
+    <Product>PRTS Terrarchive</Product>
+    <Description>Portable desktop host for PRTS Terrarchive</Description>
+    <Company>PRTS Terrarchive contributors</Company>
+    <Version>0.1.0</Version>
+    <AssemblyVersion>0.1.0.0</AssemblyVersion>
+    <FileVersion>0.1.0.0</FileVersion>
+    <InformationalVersion>0.1.0-alpha.1</InformationalVersion>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <PublishTrimmed>false</PublishTrimmed>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4191.47" />
+  </ItemGroup>
+
+  <Target Name="RemoveUnusedWebView2WpfReference" BeforeTargets="ResolveAssemblyReferences">
+    <ItemGroup>
+      <_UnusedWebView2WpfReference Include="@(Reference)"
+        Condition="'%(Reference.Filename)' == 'Microsoft.Web.WebView2.Wpf'" />
+      <Reference Remove="@(_UnusedWebView2WpfReference)" />
+    </ItemGroup>
+  </Target>
+</Project>

@@ -31,6 +31,7 @@ jobs:
           "dsh_ref=$($versions.dsh.tag)" >> $env:GITHUB_OUTPUT
           "portable=$($versions.portable)" >> $env:GITHUB_OUTPUT
           "plugin_ref=$($versions.plugin.ref)" >> $env:GITHUB_OUTPUT
+          "dotnet=$($versions.desktop.dotnetSdk)" >> $env:GITHUB_OUTPUT
 
       - name: Reject floating plugin ref for tagged releases
         if: startsWith(github.ref, 'refs/tags/')
@@ -59,6 +60,11 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ steps.versions.outputs.node }}
+
+      - name: Set up supported .NET SDK
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: ${{ steps.versions.outputs.dotnet }}
 
       - name: Activate pinned pnpm
         shell: pwsh
@@ -110,6 +116,25 @@ jobs:
           Expand-Archive ".build/$file" -DestinationPath '.build/node-expanded'
           Move-Item ".build/node-expanded/node-v$version-win-x64" '.build/node'
 
+      - name: Publish desktop executable
+        shell: pwsh
+        run: |
+          dotnet restore desktop/PrtsTerrarchive.Desktop.csproj `
+            -r win-x64 `
+            --locked-mode
+          dotnet publish desktop/PrtsTerrarchive.Desktop.csproj `
+            -c Release `
+            -r win-x64 `
+            --self-contained true `
+            --no-restore `
+            -p:PublishSingleFile=true `
+            -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:DebugType=None `
+            -p:DebugSymbols=false `
+            -o .build/desktop
+          $exe = '.build/desktop/PRTS Terrarchive.exe'
+          if (-not (Test-Path $exe)) { throw "Desktop executable missing: $exe" }
+
       - name: Assemble portable directory
         shell: pwsh
         run: |
@@ -119,6 +144,7 @@ jobs:
             --dsh-source .build/dsh `
             --plugin .build/plugin `
             --node-dir .build/node `
+            --desktop-exe ".build/desktop/PRTS Terrarchive.exe" `
             --out "dist/$name"
 
       - name: Smoke test packaged Host and plugin

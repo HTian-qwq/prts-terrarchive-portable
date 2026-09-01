@@ -109,7 +109,7 @@ async function start() {
       PRTS_PORTABLE: '1',
     },
     stdio: ['inherit', 'pipe', 'pipe'],
-    windowsHide: false,
+    windowsHide: process.platform === 'win32',
   })
 
   let opened = false
@@ -134,6 +134,12 @@ async function start() {
 
   const shutdown = () => {
     if (child.exitCode === null) child.kill()
+  }
+  if (process.env.PRTS_DESKTOP === '1') {
+    process.stdin.setEncoding('utf8')
+    process.stdin.on('data', (text) => {
+      if (text.split(/\r?\n/u).some((line) => line.trim() === 'shutdown')) shutdown()
+    })
   }
   process.once('SIGINT', shutdown)
   process.once('SIGTERM', shutdown)

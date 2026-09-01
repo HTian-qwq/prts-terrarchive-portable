@@ -26,7 +26,7 @@ function parseArgs(argv) {
     if (!key?.startsWith('--') || !value) throw new Error(`无效参数：${key ?? ''}`)
     result[key.slice(2)] = resolve(value)
   }
-  for (const required of ['dsh-deploy', 'dsh-source', 'plugin', 'node-dir', 'out']) {
+  for (const required of ['dsh-deploy', 'dsh-source', 'plugin', 'node-dir', 'desktop-exe', 'out']) {
     if (!result[required]) throw new Error(`缺少 --${required}`)
   }
   return result
@@ -95,6 +95,7 @@ const pluginDirty = execFileSync('git', ['status', '--short'], {
 const sourceNodeExecutable = join(args['node-dir'], 'node.exe')
 if (!existsSync(sourceNodeExecutable)) throw new Error('Node.js 目录中缺少 node.exe。')
 assertWindowsX64Executable(sourceNodeExecutable, '待打包的 Node.js')
+assertWindowsX64Executable(args['desktop-exe'], 'PRTS Terrarchive 桌面程序')
 
 rmSync(args.out, { recursive: true, force: true })
 mkdirSync(args.out, { recursive: true })
@@ -110,9 +111,8 @@ mkdirSync(join(args.out, 'app'), { recursive: true })
 for (const file of ['portable.mjs', 'launcher.mjs']) {
   cpSync(join(repositoryRoot, 'src', file), join(args.out, 'app', file))
 }
-for (const file of ['Start PRTS.cmd', 'Stop PRTS.cmd', 'README-PORTABLE.txt']) {
-  cpSync(join(repositoryRoot, 'templates', file), join(args.out, file))
-}
+cpSync(args['desktop-exe'], join(args.out, 'PRTS Terrarchive.exe'))
+cpSync(join(repositoryRoot, 'templates', 'README-PORTABLE.txt'), join(args.out, '使用说明.txt'))
 
 const profileDir = join(args.out, 'templates', 'profiles', 'web')
 mkdirSync(join(profileDir, 'node_modules'), { recursive: true })
@@ -162,6 +162,8 @@ writeFileSync(join(licensesDir, 'NOTICE.txt'), [
 
 writeFileSync(join(args.out, 'release-manifest.json'), `${JSON.stringify({
   portableVersion: versions.portable,
+  desktopFramework: versions.desktop.framework,
+  webView2SdkVersion: versions.desktop.webView2Sdk,
   nodeVersion: versions.node,
   pnpmVersion: versions.pnpm,
   dshVersion: dshManifest.version,

@@ -13,6 +13,7 @@ if (manifest.platform !== 'win32-x64') {
 }
 
 const requiredFiles = [
+  ['PRTS Terrarchive.exe', 'PRTS Terrarchive 桌面程序'],
   ['runtime/node/node.exe', 'Node.js'],
   ['runtime/dsh/node_modules/@koromix/koffi-win32-x64/win32_x64/koffi.node', 'Koffi'],
   ['runtime/dsh/node_modules/@img/sharp-win32-x64/lib/sharp-win32-x64-0.35.3.node', 'Sharp'],
@@ -27,8 +28,8 @@ for (const [relativePath, label] of requiredFiles) {
 }
 
 const requiredPortableFiles = [
-  'Start PRTS.cmd',
-  'Stop PRTS.cmd',
+  'PRTS Terrarchive.exe',
+  '使用说明.txt',
   'app/launcher.mjs',
   'runtime/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js',
   'templates/profiles/web/node_modules/prts-terrarchive/package.json',
@@ -38,6 +39,17 @@ for (const relativePath of requiredPortableFiles) {
   if (!existsSync(join(artifact, relativePath))) {
     throw new Error(`发行包缺少文件：${relativePath}`)
   }
+}
+
+for (const forbiddenPath of ['Start PRTS.cmd', 'Stop PRTS.cmd', 'userdata']) {
+  if (existsSync(join(artifact, forbiddenPath))) {
+    throw new Error(`发行包不应携带运行时文件或旧入口：${forbiddenPath}`)
+  }
+}
+
+const gameAssetNotice = join(artifact, 'LICENSES', 'prts-terrarchive-GAME_ASSETS.md')
+if (!existsSync(gameAssetNotice) || !readFileSync(gameAssetNotice, 'utf8').includes('not covered by the MIT License')) {
+  throw new Error('发行包缺少游戏相关资源的非 MIT 授权边界声明。')
 }
 
 const visit = (path) => {
@@ -52,6 +64,7 @@ visit(artifact)
 console.log([
   'Windows x64 静态审计通过。',
   `  Node ${manifest.nodeVersion}`,
+  `  Desktop ${manifest.desktopFramework} / WebView2 SDK ${manifest.webView2SdkVersion}`,
   `  DSH ${manifest.dshVersion} (${manifest.dshCommit})`,
   `  Plugin ${manifest.pluginVersion} (${manifest.pluginCommit})`,
 ].join('\n'))

@@ -1,6 +1,8 @@
 .build/
 dist/
 userdata/
+desktop/bin/
+desktop/obj/
 *.zip
 *.sha256
 *.log
