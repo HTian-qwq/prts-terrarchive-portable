@@ -18,9 +18,7 @@
     <InformationalVersion>0.1.0-alpha.1</InformationalVersion>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <SelfContained>true</SelfContained>
-    <PublishSingleFile>true</PublishSingleFile>
-    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
-    <PublishTrimmed>false</PublishTrimmed>
+    <PublishSingleFile>false</PublishSingleFile>
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
     <DebugType>none</DebugType>
     <DebugSymbols>false</DebugSymbols>

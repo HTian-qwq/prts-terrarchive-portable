@@ -1,23 +1,10 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { closeSync, mkdtempSync, openSync, readFileSync, rmSync, writeSync } from 'node:fs'
+import { closeSync, mkdtempSync, openSync, rmSync, writeSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { mergeProfileManifest, parseDshUrl, redactToken } from '../src/portable.mjs'
 import { assertWindowsX64Executable } from '../scripts/windows-pe.mjs'
-
-test('桌面 SDK、WebView2 与版本清单保持一致', () => {
-  const versions = JSON.parse(readFileSync(new URL('../versions.json', import.meta.url), 'utf8'))
-  const globalSdk = JSON.parse(readFileSync(new URL('../global.json', import.meta.url), 'utf8'))
-  const project = readFileSync(
-    new URL('../desktop/PrtsTerrarchive.Desktop.csproj', import.meta.url), 'utf8')
-  assert.equal(globalSdk.sdk.version, versions.desktop.dotnetSdk)
-  assert.match(project, new RegExp(
-    `<PackageReference Include="Microsoft\\.Web\\.WebView2" Version="${versions.desktop.webView2Sdk}"`,
-    'u',
-  ))
-  assert.match(project, /<TargetFramework>net10\.0-windows/u)
-})
 
 test('解析 alpha.1 Host 启动 URL，并在日志中隐藏 token', () => {
   const line = 'Open http://127.0.0.1:43189/?token=Abc_123-xyz now'

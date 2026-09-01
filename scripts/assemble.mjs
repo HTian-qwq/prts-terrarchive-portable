@@ -95,7 +95,15 @@ const pluginDirty = execFileSync('git', ['status', '--short'], {
 const sourceNodeExecutable = join(args['node-dir'], 'node.exe')
 if (!existsSync(sourceNodeExecutable)) throw new Error('Node.js 目录中缺少 node.exe。')
 assertWindowsX64Executable(sourceNodeExecutable, '待打包的 Node.js')
-assertWindowsX64Executable(args['desktop-exe'], 'PRTS Terrarchive 桌面程序')
+const desktopExeName = 'PRTS Terrarchive.exe'
+let desktopExeSource = args['desktop-exe']
+let desktopBundleDir = null
+if (lstatSync(desktopExeSource).isDirectory()) {
+  desktopBundleDir = desktopExeSource
+  desktopExeSource = join(desktopBundleDir, desktopExeName)
+  if (!existsSync(desktopExeSource)) throw new Error(`桌面发布目录中缺少 ${desktopExeName}。`)
+}
+assertWindowsX64Executable(desktopExeSource, 'PRTS Terrarchive 桌面程序')
 
 rmSync(args.out, { recursive: true, force: true })
 mkdirSync(args.out, { recursive: true })
@@ -111,7 +119,13 @@ mkdirSync(join(args.out, 'app'), { recursive: true })
 for (const file of ['portable.mjs', 'launcher.mjs']) {
   cpSync(join(repositoryRoot, 'src', file), join(args.out, 'app', file))
 }
-cpSync(args['desktop-exe'], join(args.out, 'PRTS Terrarchive.exe'))
+if (desktopBundleDir) {
+  for (const entry of readdirSync(desktopBundleDir)) {
+    cpSync(join(desktopBundleDir, entry), join(args.out, entry), { recursive: true, dereference: true })
+  }
+} else {
+  cpSync(desktopExeSource, join(args.out, desktopExeName))
+}
 cpSync(join(repositoryRoot, 'templates', 'README-PORTABLE.txt'), join(args.out, '使用说明.txt'))
 
 const profileDir = join(args.out, 'templates', 'profiles', 'web')

@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -17,6 +17,18 @@ const dataRoot = process.env.PRTS_DATA_DIR
   : join(appRoot, 'userdata')
 const statePath = join(dataRoot, '.portable', 'host.json')
 const logPath = join(dataRoot, 'logs', 'dsh.log')
+const debugLogPath = join(dataRoot, 'logs', 'launcher-debug.log')
+
+function debug(message) {
+  try {
+    mkdirSync(dirname(debugLogPath), { recursive: true })
+    appendFileSync(debugLogPath, `${new Date().toISOString()} [pid ${process.pid}] ${message}\n`)
+  } catch {
+    // 调试日志失败不影响主流程
+  }
+}
+
+debug(`launcher start node=${process.version} cwd=${process.cwd()} desktop=${process.env.PRTS_DESKTOP ?? '0'} argv=${JSON.stringify(process.argv)}`)
 const nodePath = process.platform === 'win32'
   ? join(appRoot, 'runtime', 'node', 'node.exe')
   : join(appRoot, 'runtime', 'node', 'bin', 'node')
@@ -79,12 +91,15 @@ async function stopRunning() {
 }
 
 async function start() {
+  debug('start() entered, running syncManagedInstall…')
   const prepared = syncManagedInstall({ appRoot, dataRoot })
+  debug(`syncManagedInstall done, profileDir=${prepared.profileDir}`)
   if (process.argv.includes('--prepare-only')) {
     console.log(`便携环境已准备：${prepared.profileDir}`)
     return
   }
   const existing = readHostState(statePath)
+  debug(`readHostState -> ${JSON.stringify(existing)}`)
   if (existing && await probe(existing.url)) {
     console.log('PRTS Host 已在运行，正在打开窗口。')
     openUrl(existing.url)
@@ -94,7 +109,10 @@ async function start() {
   if (!existsSync(nodePath) || !existsSync(dshEntry)) {
     throw new Error('运行时文件不完整，请重新下载并完整解压发行包。')
   }
+  debug(`spawning node=${nodePath} entry=${dshEntry}`)
 
+  // 注意：DSH 子进程的 stdin 必须是 'ignore'。若 'inherit' 桌面宿主提供的
+  // 匿名管道（永不写入也永不关闭），DSH 启动会无限阻塞且无任何输出。
   const child = spawn(nodePath, [
     dshEntry,
     '--profile', 'web',
@@ -108,9 +126,12 @@ async function start() {
       DSH_HOME: dataRoot,
       PRTS_PORTABLE: '1',
     },
-    stdio: ['inherit', 'pipe', 'pipe'],
+    stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: process.platform === 'win32',
   })
+  debug(`spawn returned, child pid=${child.pid} spawnError=${String(child.spawnResult?.error ?? 'none')}`)
+  child.once('error', (error) => debug(`child error event: ${error?.stack ?? error}`))
+  child.once('exit', (code, signal) => debug(`child exit event: code=${code} signal=${signal}`))
 
   let opened = false
   const consume = (chunk, output) => {

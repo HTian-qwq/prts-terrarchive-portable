@@ -1,4 +1,5 @@
 import {
+  appendFileSync,
   cpSync,
   existsSync,
   mkdirSync,
@@ -103,6 +104,16 @@ function writeJsonAtomic(path, value) {
 }
 
 export function syncManagedInstall({ appRoot, dataRoot }) {
+  const debugPath = join(dataRoot, 'logs', 'launcher-debug.log')
+  const debug = (message) => {
+    try {
+      mkdirSync(dirname(debugPath), { recursive: true })
+      appendFileSync(debugPath, `${new Date().toISOString()} [pid ${process.pid}] sync: ${message}\n`)
+    } catch {
+      // 调试日志失败不影响主流程
+    }
+  }
+  debug('begin')
   const templateRoot = join(appRoot, 'templates')
   const templateProfile = join(templateRoot, 'profiles', 'web')
   const templatePlugin = join(templateProfile, 'node_modules', MANAGED_PLUGIN)
@@ -112,6 +123,7 @@ export function syncManagedInstall({ appRoot, dataRoot }) {
   if (!pluginVersion || !existsSync(join(templatePlugin, 'package.json'))) {
     throw new Error('发行包中的 PRTS profile 模板不完整。')
   }
+  debug('template ok')
 
   const profileDir = join(dataRoot, 'profiles', 'web')
   mkdirSync(profileDir, { recursive: true })
@@ -119,12 +131,14 @@ export function syncManagedInstall({ appRoot, dataRoot }) {
     const target = join(profileDir, name)
     if (!existsSync(target)) cpSync(join(templateProfile, name), target)
   }
+  debug('cordis files ok')
 
   const manifestPath = join(profileDir, 'package.json')
   const currentManifest = existsSync(manifestPath)
     ? JSON.parse(readFileSync(manifestPath, 'utf8'))
     : {}
   writeJsonAtomic(manifestPath, mergeProfileManifest(currentManifest, { pluginVersion }))
+  debug('profile manifest ok')
 
   replaceManagedDirectory(
     templatePlugin,
@@ -132,13 +146,16 @@ export function syncManagedInstall({ appRoot, dataRoot }) {
     dataRoot,
     MANAGED_PLUGIN,
   )
+  debug('plugin dir replaced')
   replaceManagedDirectory(
     templatePreset,
     join(dataRoot, '.agent-presets', MANAGED_PRESET),
     dataRoot,
     MANAGED_PRESET,
   )
+  debug('preset dir replaced')
   mkdirSync(join(dataRoot, 'logs'), { recursive: true })
+  debug('done')
   return { profileDir, pluginVersion }
 }
 
