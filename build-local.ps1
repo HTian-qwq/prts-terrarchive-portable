@@ -17,6 +17,8 @@ $Corepack = Join-Path $NodeDirectory 'corepack.cmd'
 $Versions = Get-Content (Join-Path $RepositoryRoot 'versions.json') -Raw | ConvertFrom-Json
 $Name = 'PRTS-Terrarchive-Portable-windows-x64'
 $OutputDirectory = Join-Path (Join-Path $RepositoryRoot 'dist') $Name
+$StagingRoot = Join-Path $BuildRoot "release-staging-$PID"
+$StagingDirectory = Join-Path $StagingRoot $Name
 $Archive = "$OutputDirectory.zip"
 $NextArchive = "$OutputDirectory.next.zip"
 $Checksum = "$Archive.sha256"
@@ -111,6 +113,10 @@ $DesktopExe = Join-Path $DesktopPublish 'PRTS Terrarchive.exe'
 Assert-File $DesktopExe 'desktop executable'
 
 Write-Host 'Assembling the portable distribution...' -ForegroundColor Cyan
+if (Test-Path -LiteralPath $StagingRoot) {
+    Remove-Item -LiteralPath $StagingRoot -Recurse -Force
+}
+New-Item -ItemType Directory -Force $StagingRoot | Out-Null
 Invoke-Checked -Command $Node -ArgumentList @(
     (Join-Path $RepositoryRoot 'scripts\assemble.mjs'),
     '--dsh-deploy', $DshDeploy,
@@ -118,21 +124,48 @@ Invoke-Checked -Command $Node -ArgumentList @(
     '--plugin', (Resolve-Path $PluginPath).Path,
     '--node-dir', $NodeDirectory,
     '--desktop-exe', $DesktopExe,
-    '--out', $OutputDirectory)
+    '--out', $StagingDirectory)
 
 Invoke-Checked -Command $Node -ArgumentList @(
-    (Join-Path $RepositoryRoot 'scripts\audit-windows-artifact.mjs'), $OutputDirectory)
+    (Join-Path $RepositoryRoot 'scripts\audit-windows-artifact.mjs'), $StagingDirectory)
 if (-not $SkipSmoke) {
     Invoke-Checked -Command $Node -ArgumentList @(
-        (Join-Path $RepositoryRoot 'scripts\smoke-artifact.mjs'), $OutputDirectory)
+        (Join-Path $RepositoryRoot 'scripts\smoke-artifact.mjs'), $StagingDirectory)
 }
 
 Write-Host 'Creating ZIP and checksum...' -ForegroundColor Cyan
 Remove-Item -LiteralPath $NextArchive -Force -ErrorAction SilentlyContinue
-Compress-Archive -Path $OutputDirectory -DestinationPath $NextArchive -CompressionLevel Optimal
+Compress-Archive -Path $StagingDirectory -DestinationPath $NextArchive -CompressionLevel Optimal
 Move-Item -LiteralPath $NextArchive -Destination $Archive -Force
 $Hash = (Get-FileHash $Archive -Algorithm SHA256).Hash.ToLowerInvariant()
 "$Hash  $Name.zip" | Set-Content $Checksum -Encoding ascii
 
+$ExplodedDirectory = $OutputDirectory
+$PreviousDirectory = "$OutputDirectory.previous-$PID"
+$PreviousMoved = $false
+try {
+    if (Test-Path -LiteralPath $ExplodedDirectory) {
+        Move-Item -LiteralPath $ExplodedDirectory -Destination $PreviousDirectory
+        $PreviousMoved = $true
+    }
+    Move-Item -LiteralPath $StagingDirectory -Destination $ExplodedDirectory
+    Remove-Item -LiteralPath $StagingRoot -Force -ErrorAction SilentlyContinue
+    if ($PreviousMoved) {
+        try {
+            Remove-Item -LiteralPath $PreviousDirectory -Recurse -Force
+        } catch {
+            Write-Warning "The old expanded distribution remains at: $PreviousDirectory"
+        }
+    }
+} catch {
+    if ($PreviousMoved -and -not (Test-Path -LiteralPath $ExplodedDirectory)) {
+        Move-Item -LiteralPath $PreviousDirectory -Destination $ExplodedDirectory
+    }
+    $ExplodedDirectory = $StagingDirectory
+    Write-Warning 'The previous expanded distribution is in use and could not be replaced.'
+    Write-Warning 'Exit PRTS Terrarchive from the tray before replacing that directory.'
+}
+
 Write-Host "Done: $Archive" -ForegroundColor Green
 Write-Host "SHA-256: $Hash"
+Write-Host "Expanded: $ExplodedDirectory"
