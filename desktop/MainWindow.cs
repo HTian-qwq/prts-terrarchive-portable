@@ -18,14 +18,9 @@ internal sealed class MainWindow : Form
     private readonly Label loadingDetail;
     private readonly Button retryButton;
     private readonly Button openBrowserButton;
-    private readonly Label statusLabel = new()
-    {
-        AutoSize = false,
-        Dock = DockStyle.Fill,
-        Text = "正在准备 PRTS Terrarchive…",
-        TextAlign = ContentAlignment.MiddleLeft,
-        Padding = new Padding(12, 0, 0, 0),
-    };
+    private readonly Panel dragStrip;
+    private readonly FlowLayoutPanel windowControls;
+    private readonly Button maximizeButton;
     private readonly NotifyIcon trayIcon;
     private readonly ToolStripMenuItem restartMenuItem;
     private bool allowClose;
@@ -49,6 +44,7 @@ internal sealed class MainWindow : Form
         ClientSize = new Size(1280, 820);
         BackColor = Color.FromArgb(244, 244, 241);
         Font = new Font("Segoe UI", 9F);
+        FormBorderStyle = FormBorderStyle.None;
         Icon = System.Drawing.Icon.ExtractAssociatedIcon(Application.ExecutablePath) ?? CreateAppIcon();
 
         (loadingOverlay, loadingMessage, loadingDetail, retryButton, openBrowserButton) =
@@ -59,23 +55,14 @@ internal sealed class MainWindow : Form
             if (hostUri is not null) OpenExternalUri(hostUri.AbsoluteUri);
         };
 
-        var statusPanel = new Panel
-        {
-            Dock = DockStyle.Bottom,
-            Height = 34,
-            BackColor = Color.FromArgb(250, 250, 247),
-        };
-        statusPanel.Paint += (_, args) =>
-        {
-            using var line = new Pen(Color.FromArgb(225, 225, 220));
-            args.Graphics.DrawLine(line, 0, 0, statusPanel.Width, 0);
-        };
-        statusPanel.Controls.Add(statusLabel);
+        (dragStrip, windowControls, maximizeButton) = CreateWindowChrome();
+
         Controls.Add(browser);
         Controls.Add(loadingOverlay);
-        Controls.Add(statusPanel);
+        Controls.Add(dragStrip);
+        Controls.Add(windowControls);
         loadingOverlay.BringToFront();
-        statusPanel.BringToFront();
+        BringWindowChromeToFront();
 
         var showMenuItem = new ToolStripMenuItem("显示窗口", null, (_, _) => RestoreFromTray())
         {
@@ -105,7 +92,13 @@ internal sealed class MainWindow : Form
         host.Ready += uri => RunOnUiThread(() => NavigateToHost(uri));
         host.StatusChanged += message => RunOnUiThread(() => SetStatus(message));
         Shown += async (_, _) => await StartHostAsync();
+        Resize += (_, _) =>
+        {
+            LayoutWindowChrome();
+            maximizeButton.Text = WindowState == FormWindowState.Maximized ? "❐" : "□";
+        };
         FormClosing += HandleFormClosing;
+        LayoutWindowChrome();
     }
 
     private async Task StartHostAsync()
@@ -192,6 +185,7 @@ internal sealed class MainWindow : Form
         hostUri = uri;
         loadingOverlay.Visible = true;
         loadingOverlay.BringToFront();
+        BringWindowChromeToFront();
         browser.Visible = false;
         retryButton.Visible = false;
         openBrowserButton.Visible = false;
@@ -213,7 +207,6 @@ internal sealed class MainWindow : Form
 
     private void SetStatus(string message)
     {
-        statusLabel.Text = $"●  {message}";
         if (loadingOverlay.Visible && !retryButton.Visible) loadingDetail.Text = message;
     }
 
@@ -222,7 +215,7 @@ internal sealed class MainWindow : Form
         browser.Visible = false;
         loadingOverlay.Visible = true;
         loadingOverlay.BringToFront();
-        statusLabel.Text = $"●  {title}";
+        BringWindowChromeToFront();
         loadingMessage.Text = title;
         loadingDetail.Text = detail;
         retryButton.Visible = true;
@@ -274,11 +267,6 @@ internal sealed class MainWindow : Form
 
         args.Cancel = true;
         Hide();
-        trayIcon.ShowBalloonTip(
-            1800,
-            "PRTS Terrarchive 仍在运行",
-            "可通过任务栏托盘图标重新打开或退出。",
-            ToolTipIcon.Info);
     }
 
     public void RestoreFromTrayThreadSafe()
@@ -298,7 +286,6 @@ internal sealed class MainWindow : Form
     public async Task ShutdownAsync()
     {
         restartMenuItem.Enabled = false;
-        statusLabel.Text = "正在退出…";
         await host.DisposeAsync();
         allowClose = true;
         trayIcon.Visible = false;
@@ -344,10 +331,10 @@ internal sealed class MainWindow : Form
         {
             graphics.SmoothingMode = SmoothingMode.AntiAlias;
             graphics.Clear(Color.Transparent);
-            using var background = new SolidBrush(Color.FromArgb(17, 18, 20));
+            using var background = new SolidBrush(Color.White);
             graphics.FillRoundedRectangle(background, new Rectangle(3, 3, 58, 58), 17);
             using var font = new Font("Consolas", 36, FontStyle.Bold, GraphicsUnit.Pixel);
-            using var foreground = new SolidBrush(Color.White);
+            using var foreground = new SolidBrush(Color.FromArgb(17, 18, 20));
             var format = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
             var state = graphics.Save();
             graphics.TranslateTransform(2, 0);
@@ -460,9 +447,141 @@ internal sealed class MainWindow : Form
         return button;
     }
 
+    private (Panel DragStrip, FlowLayoutPanel Controls, Button Maximize) CreateWindowChrome()
+    {
+        var drag = new Panel
+        {
+            Height = 7,
+            BackColor = Color.Transparent,
+            Cursor = Cursors.SizeAll,
+        };
+        drag.MouseDown += (_, args) =>
+        {
+            if (args.Button != MouseButtons.Left) return;
+            ReleaseCapture();
+            SendMessage(Handle, WmNcLButtonDown, HtCaption, 0);
+        };
+        drag.DoubleClick += (_, _) => ToggleMaximize();
+
+        var controls = new FlowLayoutPanel
+        {
+            Width = 132,
+            Height = 32,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            Margin = Padding.Empty,
+            Padding = Padding.Empty,
+            BackColor = Color.FromArgb(17, 18, 20),
+        };
+        var minimize = CreateWindowButton("−");
+        var maximize = CreateWindowButton("□");
+        var close = CreateWindowButton("×", closeButton: true);
+        minimize.Click += (_, _) => WindowState = FormWindowState.Minimized;
+        maximize.Click += (_, _) => ToggleMaximize();
+        close.Click += (_, _) => Close();
+        controls.Controls.Add(minimize);
+        controls.Controls.Add(maximize);
+        controls.Controls.Add(close);
+        return (drag, controls, maximize);
+    }
+
+    private static Button CreateWindowButton(string text, bool closeButton = false)
+    {
+        var button = new Button
+        {
+            Width = 44,
+            Height = 32,
+            Margin = Padding.Empty,
+            Padding = Padding.Empty,
+            Text = text,
+            TabStop = false,
+            FlatStyle = FlatStyle.Flat,
+            BackColor = Color.FromArgb(17, 18, 20),
+            ForeColor = Color.White,
+            Font = new Font("Segoe UI Symbol", 11F),
+            Cursor = Cursors.Hand,
+        };
+        button.FlatAppearance.BorderSize = 0;
+        button.FlatAppearance.MouseOverBackColor = closeButton
+            ? Color.FromArgb(196, 43, 43)
+            : Color.FromArgb(48, 49, 52);
+        button.FlatAppearance.MouseDownBackColor = closeButton
+            ? Color.FromArgb(154, 30, 30)
+            : Color.FromArgb(64, 65, 68);
+        return button;
+    }
+
+    private void ToggleMaximize()
+    {
+        if (WindowState == FormWindowState.Maximized)
+        {
+            WindowState = FormWindowState.Normal;
+            return;
+        }
+        MaximizedBounds = Screen.FromControl(this).WorkingArea;
+        WindowState = FormWindowState.Maximized;
+    }
+
+    private void LayoutWindowChrome()
+    {
+        dragStrip.SetBounds(0, 0, Math.Max(0, ClientSize.Width - windowControls.Width), 7);
+        windowControls.Location = new Point(Math.Max(0, ClientSize.Width - windowControls.Width), 0);
+    }
+
+    private void BringWindowChromeToFront()
+    {
+        dragStrip.BringToFront();
+        windowControls.BringToFront();
+    }
+
+    protected override void WndProc(ref Message message)
+    {
+        base.WndProc(ref message);
+        if (message.Msg != WmNcHitTest || WindowState != FormWindowState.Normal
+            || (int)message.Result != HtClient) return;
+
+        var packed = message.LParam.ToInt64();
+        var screenPoint = new Point(unchecked((short)(packed & 0xffff)), unchecked((short)((packed >> 16) & 0xffff)));
+        var point = PointToClient(screenPoint);
+        const int grip = 7;
+        var left = point.X < grip;
+        var right = point.X >= ClientSize.Width - grip;
+        var top = point.Y < grip;
+        var bottom = point.Y >= ClientSize.Height - grip;
+        message.Result = (IntPtr)(top && left ? HtTopLeft
+            : top && right ? HtTopRight
+            : bottom && left ? HtBottomLeft
+            : bottom && right ? HtBottomRight
+            : left ? HtLeft
+            : right ? HtRight
+            : top ? HtTop
+            : bottom ? HtBottom
+            : HtClient);
+    }
+
+    private const int WmNcHitTest = 0x0084;
+    private const int WmNcLButtonDown = 0x00A1;
+    private const int HtClient = 1;
+    private const int HtCaption = 2;
+    private const int HtLeft = 10;
+    private const int HtRight = 11;
+    private const int HtTop = 12;
+    private const int HtTopLeft = 13;
+    private const int HtTopRight = 14;
+    private const int HtBottom = 15;
+    private const int HtBottomLeft = 16;
+    private const int HtBottomRight = 17;
+
     [DllImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool DestroyIcon(IntPtr icon);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool ReleaseCapture();
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr SendMessage(IntPtr window, int message, int wParam, int lParam);
 }
 
 internal sealed class PrtsLogoControl : Control
@@ -481,10 +600,10 @@ internal sealed class PrtsLogoControl : Control
         graphics.SmoothingMode = SmoothingMode.AntiAlias;
         var side = Math.Min(ClientSize.Width, ClientSize.Height) - 2;
         var bounds = new Rectangle((ClientSize.Width - side) / 2, (ClientSize.Height - side) / 2, side, side);
-        using var background = new SolidBrush(Color.FromArgb(17, 18, 20));
+        using var background = new SolidBrush(Color.White);
         graphics.FillRoundedRectangle(background, bounds, Math.Max(10, side / 4));
         using var font = new Font("Consolas", side * 0.57F, FontStyle.Bold, GraphicsUnit.Pixel);
-        using var foreground = new SolidBrush(Color.White);
+        using var foreground = new SolidBrush(Color.FromArgb(17, 18, 20));
         using var format = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
         var state = graphics.Save();
         graphics.TranslateTransform(side * 0.03F, 0);
