@@ -12,6 +12,7 @@ import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 
 export const MANAGED_PLUGIN = 'prts-terrarchive'
 export const MANAGED_PRESET = 'prts'
+const MANAGED_SOURCE_MARKER = '.prts-portable-source.json'
 
 export function parseDshUrl(text) {
   const match = String(text).match(/https?:\/\/(?:127\.0\.0\.1|localhost):\d+\/\?token=[A-Za-z0-9_-]+/u)
@@ -70,25 +71,67 @@ function assertManagedTarget(dataRoot, target, expectedName) {
   }
 }
 
+const retryableWindowsFsErrors = new Set(['EACCES', 'EBUSY', 'EPERM'])
+
+function waitSync(milliseconds) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds)
+}
+
+function renameWithRetry(source, target) {
+  const delays = process.platform === 'win32'
+    ? [40, 80, 160, 320, 640, 1000, 1500]
+    : []
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      renameSync(source, target)
+      return
+    } catch (error) {
+      if (!retryableWindowsFsErrors.has(error?.code) || attempt >= delays.length) throw error
+      waitSync(delays[attempt])
+    }
+  }
+}
+
+function removeDirectoryWithRetry(path) {
+  rmSync(path, {
+    recursive: true,
+    force: true,
+    maxRetries: process.platform === 'win32' ? 8 : 0,
+    retryDelay: 75,
+  })
+}
+
+function managedDirectoryIsCurrent(source, target) {
+  if (!existsSync(target)) return false
+  try {
+    return readFileSync(join(source, MANAGED_SOURCE_MARKER), 'utf8')
+      === readFileSync(join(target, MANAGED_SOURCE_MARKER), 'utf8')
+  } catch {
+    return false
+  }
+}
+
 function replaceManagedDirectory(source, target, dataRoot, expectedName) {
   assertManagedTarget(dataRoot, target, expectedName)
+  if (managedDirectoryIsCurrent(source, target)) return false
   const parent = dirname(target)
   const next = join(parent, `.${expectedName}.next-${process.pid}`)
   const backup = join(parent, `.${expectedName}.previous-${process.pid}`)
   mkdirSync(parent, { recursive: true })
-  rmSync(next, { recursive: true, force: true })
-  rmSync(backup, { recursive: true, force: true })
+  removeDirectoryWithRetry(next)
+  removeDirectoryWithRetry(backup)
   cpSync(source, next, { recursive: true, dereference: true })
-  if (existsSync(target)) renameSync(target, backup)
+  if (existsSync(target)) renameWithRetry(target, backup)
   try {
-    renameSync(next, target)
-    rmSync(backup, { recursive: true, force: true })
+    renameWithRetry(next, target)
+    removeDirectoryWithRetry(backup)
   } catch (error) {
-    if (!existsSync(target) && existsSync(backup)) renameSync(backup, target)
+    if (!existsSync(target) && existsSync(backup)) renameWithRetry(backup, target)
     throw error
   } finally {
-    rmSync(next, { recursive: true, force: true })
+    removeDirectoryWithRetry(next)
   }
+  return true
 }
 
 function writeJsonAtomic(path, value) {
@@ -140,20 +183,20 @@ export function syncManagedInstall({ appRoot, dataRoot }) {
   writeJsonAtomic(manifestPath, mergeProfileManifest(currentManifest, { pluginVersion }))
   debug('profile manifest ok')
 
-  replaceManagedDirectory(
+  const pluginReplaced = replaceManagedDirectory(
     templatePlugin,
     join(profileDir, 'node_modules', MANAGED_PLUGIN),
     dataRoot,
     MANAGED_PLUGIN,
   )
-  debug('plugin dir replaced')
-  replaceManagedDirectory(
+  debug(`plugin dir ${pluginReplaced ? 'replaced' : 'already current'}`)
+  const presetReplaced = replaceManagedDirectory(
     templatePreset,
     join(dataRoot, '.agent-presets', MANAGED_PRESET),
     dataRoot,
     MANAGED_PRESET,
   )
-  debug('preset dir replaced')
+  debug(`preset dir ${presetReplaced ? 'replaced' : 'already current'}`)
   mkdirSync(join(dataRoot, 'logs'), { recursive: true })
   debug('done')
   return { profileDir, pluginVersion }

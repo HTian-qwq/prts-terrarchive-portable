@@ -135,6 +135,15 @@ for (const file of ['cordis.yml', 'cordis.patch.yml']) {
 }
 const pluginDir = join(profileDir, 'node_modules', 'prts-terrarchive')
 const pluginManifest = copyPackage(args.plugin, pluginDir)
+const managedBuildId = pluginDirty
+  ? `${pluginCommit}-dirty-${Date.now()}`
+  : pluginCommit
+const managedSourceMarker = `${JSON.stringify({
+  pluginVersion: pluginManifest.version,
+  pluginCommit,
+  managedBuildId,
+}, null, 2)}\n`
+writeFileSync(join(pluginDir, '.prts-portable-source.json'), managedSourceMarker)
 writeFileSync(join(profileDir, 'package.json'), `${JSON.stringify({
   name: 'dsh-profile-web',
   private: true,
@@ -158,6 +167,10 @@ execFileSync(process.execPath, [join(args.plugin, 'bin', 'install.js'), 'web', '
   env: { ...process.env, DSH_HOME: join(args.out, 'templates') },
   stdio: 'inherit',
 })
+writeFileSync(
+  join(args.out, 'templates', '.agent-presets', 'prts', '.prts-portable-source.json'),
+  managedSourceMarker,
+)
 
 const licensesDir = join(args.out, 'LICENSES')
 mkdirSync(licensesDir, { recursive: true })

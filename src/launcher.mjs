@@ -91,21 +91,36 @@ async function stopRunning() {
 }
 
 async function start() {
-  debug('start() entered, running syncManagedInstall…')
+  const existing = readHostState(statePath)
+  debug(`readHostState -> ${JSON.stringify(existing)}`)
+  if (existing && await probe(existing.url)) {
+    if (process.env.PRTS_DESKTOP === '1') {
+      debug(`stopping stale desktop host pid=${existing.pid} before managed sync`)
+      try { process.kill(existing.pid) } catch (error) {
+        if (error?.code !== 'ESRCH') throw error
+      }
+      for (let attempt = 0; attempt < 25 && await probe(existing.url); attempt += 1) {
+        await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
+      }
+      if (await probe(existing.url)) {
+        throw new Error(`旧的 PRTS Host（PID ${existing.pid}）仍在占用数据目录，请结束该进程后重试。`)
+      }
+      removeHostState(statePath)
+    } else {
+      console.log(`PRTS Host 已在运行：${existing.url}`)
+      openUrl(existing.url)
+      return
+    }
+  }
+  if (existing) removeHostState(statePath)
+
+  debug('running syncManagedInstall…')
   const prepared = syncManagedInstall({ appRoot, dataRoot })
   debug(`syncManagedInstall done, profileDir=${prepared.profileDir}`)
   if (process.argv.includes('--prepare-only')) {
     console.log(`便携环境已准备：${prepared.profileDir}`)
     return
   }
-  const existing = readHostState(statePath)
-  debug(`readHostState -> ${JSON.stringify(existing)}`)
-  if (existing && await probe(existing.url)) {
-    console.log('PRTS Host 已在运行，正在打开窗口。')
-    openUrl(existing.url)
-    return
-  }
-  if (existing) removeHostState(statePath)
   if (!existsSync(nodePath) || !existsSync(dshEntry)) {
     throw new Error('运行时文件不完整，请重新下载并完整解压发行包。')
   }

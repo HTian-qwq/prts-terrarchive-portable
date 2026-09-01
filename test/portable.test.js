@@ -1,9 +1,24 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { closeSync, mkdtempSync, openSync, rmSync, writeSync } from 'node:fs'
+import {
+  closeSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  openSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+  writeSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { mergeProfileManifest, parseDshUrl, redactToken } from '../src/portable.mjs'
+import {
+  mergeProfileManifest,
+  parseDshUrl,
+  redactToken,
+  syncManagedInstall,
+} from '../src/portable.mjs'
 import { assertWindowsX64Executable } from '../scripts/windows-pe.mjs'
 
 test('解析 alpha.1 Host 启动 URL，并在日志中隐藏 token', () => {
@@ -29,6 +44,45 @@ test('合并 profile 时保留第三方 bundle，并固定托管插件', () => {
     'prts-terrarchive',
   ])
   assert.equal(merged.dsh.profile.patchReload, 'live')
+})
+
+test('托管目录仅在发行标记变化时原子替换', () => {
+  const root = mkdtempSync(join(tmpdir(), 'prts-managed-test-'))
+  const appRoot = join(root, 'app')
+  const dataRoot = join(root, 'data')
+  const profile = join(appRoot, 'templates', 'profiles', 'web')
+  const plugin = join(profile, 'node_modules', 'prts-terrarchive')
+  const preset = join(appRoot, 'templates', '.agent-presets', 'prts')
+  mkdirSync(plugin, { recursive: true })
+  mkdirSync(preset, { recursive: true })
+  writeFileSync(join(profile, 'package.json'), JSON.stringify({
+    dependencies: { 'prts-terrarchive': '0.1.0-alpha.1' },
+  }))
+  writeFileSync(join(profile, 'cordis.yml'), 'name: web\n')
+  writeFileSync(join(profile, 'cordis.patch.yml'), 'patch: true\n')
+  writeFileSync(join(plugin, 'package.json'), JSON.stringify({
+    name: 'prts-terrarchive', version: '0.1.0-alpha.1',
+  }))
+  writeFileSync(join(plugin, 'content.txt'), 'first')
+  writeFileSync(join(plugin, '.prts-portable-source.json'), '{"build":"one"}\n')
+  writeFileSync(join(preset, 'preset.txt'), 'first')
+  writeFileSync(join(preset, '.prts-portable-source.json'), '{"build":"one"}\n')
+
+  try {
+    syncManagedInstall({ appRoot, dataRoot })
+    const installed = join(dataRoot, 'profiles', 'web', 'node_modules', 'prts-terrarchive')
+    writeFileSync(join(installed, 'sentinel.txt'), 'keep when current')
+    syncManagedInstall({ appRoot, dataRoot })
+    assert.equal(readFileSync(join(installed, 'sentinel.txt'), 'utf8'), 'keep when current')
+
+    writeFileSync(join(plugin, 'content.txt'), 'second')
+    writeFileSync(join(plugin, '.prts-portable-source.json'), '{"build":"two"}\n')
+    syncManagedInstall({ appRoot, dataRoot })
+    assert.equal(readFileSync(join(installed, 'content.txt'), 'utf8'), 'second')
+    assert.equal(existsSync(join(installed, 'sentinel.txt')), false)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
 })
 
 test('拒绝把 Linux ELF 伪装成 Windows node.exe', () => {
