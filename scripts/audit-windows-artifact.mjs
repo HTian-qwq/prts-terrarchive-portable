@@ -52,6 +52,22 @@ if (!existsSync(gameAssetNotice) || !readFileSync(gameAssetNotice, 'utf8').inclu
   throw new Error('发行包缺少游戏相关资源的非 MIT 授权边界声明。')
 }
 
+if (!manifest.features?.includes('prts-agent-live-retrieval-scene')) {
+  throw new Error('发行清单没有声明 PRTS Agent 动态检索场景能力。')
+}
+const pluginClient = readFileSync(join(
+  artifact, 'templates', 'profiles', 'web', 'node_modules', 'prts-terrarchive', 'lib', 'client.js'), 'utf8')
+for (const signature of [
+  'buildSceneSnapshotModel',
+  'sceneSnapshotSignature',
+  'QUERYING RETRIEVAL SERVICE',
+  'SOURCE CONTEXT READY',
+]) {
+  if (!pluginClient.includes(signature)) {
+    throw new Error(`发行包中的 PRTS Agent 动态检索场景不完整：缺少 ${signature}`)
+  }
+}
+
 const visit = (path) => {
   const stat = lstatSync(path)
   if (stat.isSymbolicLink()) throw new Error(`发行包仍含符号链接：${path}`)
