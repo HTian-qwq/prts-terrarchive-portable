@@ -26,13 +26,13 @@ function Invoke-Checked {
           [Parameter(ValueFromRemainingArguments = $true)][string[]]$Arguments)
     & $Command @Arguments
     if ($LASTEXITCODE -ne 0) {
-        throw "$Command 执行失败（退出码 $LASTEXITCODE）"
+        throw "$Command failed with exit code $LASTEXITCODE"
     }
 }
 
 function Assert-File([string]$Path, [string]$Description) {
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
-        throw "缺少$Description：$Path"
+        throw "Missing ${Description}: $Path"
     }
 }
 
@@ -49,25 +49,25 @@ Add-ToolPath (Join-Path $ToolsRoot 'dotnet')
 Add-ToolPath $NodeDirectory
 Assert-File $Node 'Windows x64 Node.js'
 Assert-File $Corepack 'Corepack'
-Assert-File (Join-Path $PluginPath 'package.json') 'prts-terrarchive 插件源码'
+Assert-File (Join-Path $PluginPath 'package.json') 'prts-terrarchive plugin source'
 
-if (-not (Get-Command git -ErrorAction SilentlyContinue)) { throw '找不到 Git。' }
-if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) { throw '找不到 .NET SDK。' }
+if (-not (Get-Command git -ErrorAction SilentlyContinue)) { throw 'Git was not found.' }
+if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) { throw '.NET SDK was not found.' }
 
 if (-not (Test-Path (Join-Path $DshSource '.git'))) {
-    Write-Host '正在获取固定版本 DeepSeek Harness…' -ForegroundColor Cyan
+    Write-Host 'Fetching pinned DeepSeek Harness...' -ForegroundColor Cyan
     Invoke-Checked git clone --no-checkout https://github.com/deepseek-ai/deepseek-harness.git $DshSource
     Invoke-Checked git -C $DshSource fetch origin ([string]$Versions.dsh.commit) --depth 1
     Invoke-Checked git -C $DshSource checkout --detach ([string]$Versions.dsh.commit)
 }
 $DshCommit = (git -C $DshSource rev-parse HEAD).Trim()
 if ($LASTEXITCODE -ne 0 -or $DshCommit -ne ([string]$Versions.dsh.commit)) {
-    throw "DSH 版本不符：需要 $($Versions.dsh.commit)，当前为 $DshCommit"
+    throw "DSH revision mismatch: expected $($Versions.dsh.commit), found $DshCommit"
 }
 
 Invoke-Checked $Corepack prepare "pnpm@$($Versions.pnpm)" --activate
 if (-not $SkipDshBuild) {
-    Write-Host '正在安装并增量构建官方 DSH…' -ForegroundColor Cyan
+    Write-Host 'Installing and building official DSH...' -ForegroundColor Cyan
     Push-Location $DshSource
     try {
         Invoke-Checked $Corepack pnpm install --frozen-lockfile
@@ -75,7 +75,7 @@ if (-not $SkipDshBuild) {
     } finally { Pop-Location }
 }
 
-Write-Host '正在生成生产运行闭包…' -ForegroundColor Cyan
+Write-Host 'Creating the production runtime closure...' -ForegroundColor Cyan
 Invoke-Checked $Node (Join-Path $RepositoryRoot 'scripts\prepare-dsh-workspace.mjs') $DshSource
 if (Test-Path -LiteralPath $DshDeploy) {
     Remove-Item -LiteralPath $DshDeploy -Recurse -Force
@@ -89,7 +89,7 @@ try {
 Invoke-Checked $Node (Join-Path $RepositoryRoot 'scripts\complete-dsh-workspace-closure.mjs') `
     $DshSource $DshDeploy
 
-Write-Host '正在发布单文件桌面程序…' -ForegroundColor Cyan
+Write-Host 'Publishing the single-file desktop application...' -ForegroundColor Cyan
 if (Test-Path -LiteralPath $DesktopPublish) {
     Remove-Item -LiteralPath $DesktopPublish -Recurse -Force
 }
@@ -100,9 +100,9 @@ Invoke-Checked dotnet publish (Join-Path $RepositoryRoot 'desktop\PrtsTerrarchiv
     -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
     -p:DebugType=None -p:DebugSymbols=false -o $DesktopPublish
 $DesktopExe = Join-Path $DesktopPublish 'PRTS Terrarchive.exe'
-Assert-File $DesktopExe '桌面程序'
+Assert-File $DesktopExe 'desktop executable'
 
-Write-Host '正在组装发行目录…' -ForegroundColor Cyan
+Write-Host 'Assembling the portable distribution...' -ForegroundColor Cyan
 Invoke-Checked $Node (Join-Path $RepositoryRoot 'scripts\assemble.mjs') `
     --dsh-deploy $DshDeploy `
     --dsh-source $DshSource `
@@ -116,12 +116,12 @@ if (-not $SkipSmoke) {
     Invoke-Checked $Node (Join-Path $RepositoryRoot 'scripts\smoke-artifact.mjs') $OutputDirectory
 }
 
-Write-Host '正在生成 ZIP 和校验值…' -ForegroundColor Cyan
+Write-Host 'Creating ZIP and checksum...' -ForegroundColor Cyan
 Remove-Item -LiteralPath $NextArchive -Force -ErrorAction SilentlyContinue
 Compress-Archive -Path $OutputDirectory -DestinationPath $NextArchive -CompressionLevel Optimal
 Move-Item -LiteralPath $NextArchive -Destination $Archive -Force
 $Hash = (Get-FileHash $Archive -Algorithm SHA256).Hash.ToLowerInvariant()
 "$Hash  $Name.zip" | Set-Content $Checksum -Encoding ascii
 
-Write-Host "完成：$Archive" -ForegroundColor Green
-Write-Host "SHA-256：$Hash"
+Write-Host "Done: $Archive" -ForegroundColor Green
+Write-Host "SHA-256: $Hash"
