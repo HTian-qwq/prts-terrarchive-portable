@@ -80,11 +80,50 @@ npm run check
 npm test
 ```
 
-完整组装必须在 Windows runner 上完成，因为 DSH 包含平台相关依赖。Linux/macOS 本地开发
-主要验证启动器纯函数和构建脚本语法。名称带 `local-smoke` 的本地产物不是 Windows
-发行包，不得复制到 Windows 使用；可供测试的 ZIP 必须来自 Windows GitHub Actions，且
-文件名为 `PRTS-Terrarchive-Portable-windows-x64.zip`。组装和冒烟脚本都会校验内置
-`node.exe` 的 Windows PE x64 文件头，防止错误平台的运行时混入发行包。
+## 在 Windows 上开发
+
+Git 仓库只保存原创源码、版本锁和构建脚本，不提交约 500 MB 的 Node/DSH 运行闭包、NuGet
+缓存或编译产物。因此刚 clone 下来的仓库只有几十 KB，这是预期行为。
+
+首次准备完整开发环境需要安装 Git 和 .NET 10 SDK，然后在 PowerShell 中运行：
+
+```powershell
+git clone https://github.com/HTian-qwq/prts-terrarchive-portable.git
+cd prts-terrarchive-portable
+powershell -ExecutionPolicy Bypass -File scripts\build-windows-local.ps1
+```
+
+建议把仓库放在 `C:\src`、`D:\dev` 等较短路径，避免 DSH 的依赖树触发 Windows 旧式路径
+长度限制。
+
+脚本会读取 `versions.json`，下载并校验固定 Node.js，checkout 精确 DSH 和插件提交，构建运行
+闭包、桌面 EXE并执行真实 Host 冒烟检查。完整可运行目录输出到：
+
+```text
+dist\PRTS-Terrarchive-Desktop-windows-x64-dev\
+```
+
+如果同级目录存在本地 `prts-terrarchive` 仓库，脚本会优先使用它；也可以明确指定：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\build-windows-local.ps1 `
+  -PluginPath ..\prts-terrarchive
+```
+
+第一次完整构建后，只修改 `desktop\*.cs` 时可以快速重编并替换开发目录中的 EXE：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\build-windows-local.ps1 -DesktopOnly
+```
+
+运行快速重编前应先从托盘退出正在运行的程序，避免 Windows 锁定 EXE。`.build\`、`dist\`
+和 `userdata\` 均是本机状态，不会提交到 Git。
+
+完整运行闭包必须在 Windows 环境中构建，因为 DSH 包含平台相关依赖。可以使用上述本地
+PowerShell 脚本，也可以使用 GitHub Actions。Linux/macOS 主要用于桌面 EXE 交叉编译、
+启动器纯函数和构建脚本的静态验证，不能替代 Windows Host 冒烟测试。组装和冒烟脚本都会
+校验内置 `node.exe`、桌面 EXE 与原生模块的 Windows PE x64 文件头，防止错误平台运行时
+混入发行包。
 
 ## 许可边界
 
