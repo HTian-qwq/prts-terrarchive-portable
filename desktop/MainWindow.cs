@@ -95,10 +95,17 @@ internal sealed class MainWindow : Form
         Resize += (_, _) =>
         {
             LayoutWindowChrome();
+            ApplyWindowShape();
             maximizeButton.Text = WindowState == FormWindowState.Maximized ? "❐" : "□";
         };
         FormClosing += HandleFormClosing;
         LayoutWindowChrome();
+    }
+
+    protected override void OnHandleCreated(EventArgs args)
+    {
+        base.OnHandleCreated(args);
+        ApplyWindowShape();
     }
 
     private async Task StartHostAsync()
@@ -693,6 +700,49 @@ internal sealed class MainWindow : Form
         windowControls.Visible = false;
     }
 
+    private void ApplyWindowShape()
+    {
+        if (!IsHandleCreated || ClientSize.Width <= 0 || ClientSize.Height <= 0) return;
+
+        if (OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000))
+        {
+            var oldRegion = Region;
+            Region = null;
+            oldRegion?.Dispose();
+
+            var cornerPreference = WindowState == FormWindowState.Maximized
+                ? DwmWindowCornerPreference.DoNotRound
+                : DwmWindowCornerPreference.Round;
+            _ = DwmSetWindowAttribute(
+                Handle,
+                DwmWindowAttribute.WindowCornerPreference,
+                ref cornerPreference,
+                Marshal.SizeOf<DwmWindowCornerPreference>());
+
+            var borderColor = unchecked((int)0xfffffffe);
+            _ = DwmSetWindowAttribute(
+                Handle,
+                DwmWindowAttribute.BorderColor,
+                ref borderColor,
+                sizeof(int));
+            return;
+        }
+
+        var previousRegion = Region;
+        if (WindowState == FormWindowState.Maximized)
+        {
+            Region = null;
+        }
+        else
+        {
+            var radius = Math.Max(10, (int)Math.Round(14 * DeviceDpi / 96F));
+            using var path = GraphicsExtensions.CreateRoundedRectanglePath(
+                new Rectangle(0, 0, Width, Height), radius);
+            Region = new Region(path);
+        }
+        previousRegion?.Dispose();
+    }
+
     protected override void WndProc(ref Message message)
     {
         base.WndProc(ref message);
@@ -730,6 +780,33 @@ internal sealed class MainWindow : Form
     private const int HtBottom = 15;
     private const int HtBottomLeft = 16;
     private const int HtBottomRight = 17;
+
+    private enum DwmWindowAttribute
+    {
+        WindowCornerPreference = 33,
+        BorderColor = 34,
+    }
+
+    private enum DwmWindowCornerPreference
+    {
+        Default = 0,
+        DoNotRound = 1,
+        Round = 2,
+    }
+
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(
+        IntPtr window,
+        DwmWindowAttribute attribute,
+        ref DwmWindowCornerPreference value,
+        int valueSize);
+
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(
+        IntPtr window,
+        DwmWindowAttribute attribute,
+        ref int value,
+        int valueSize);
 
     [DllImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
