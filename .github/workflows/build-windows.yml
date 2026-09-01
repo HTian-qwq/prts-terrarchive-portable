@@ -1,0 +1,155 @@
+name: Build Windows portable release
+
+on:
+  workflow_dispatch:
+    inputs:
+      plugin_ref:
+        description: prts-terrarchive git ref
+        required: true
+        default: main
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  windows-x64:
+    runs-on: windows-2025
+    steps:
+      - name: Checkout portable builder
+        uses: actions/checkout@v4
+
+      - name: Read pinned versions
+        id: versions
+        shell: pwsh
+        run: |
+          $versions = Get-Content versions.json -Raw | ConvertFrom-Json
+          "node=$($versions.node)" >> $env:GITHUB_OUTPUT
+          "pnpm=$($versions.pnpm)" >> $env:GITHUB_OUTPUT
+          "dsh_ref=$($versions.dsh.tag)" >> $env:GITHUB_OUTPUT
+          "portable=$($versions.portable)" >> $env:GITHUB_OUTPUT
+          "plugin_ref=$($versions.plugin.ref)" >> $env:GITHUB_OUTPUT
+
+      - name: Reject floating plugin ref for tagged releases
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        run: |
+          $ref = '${{ steps.versions.outputs.plugin_ref }}'
+          if ($ref -in @('main', 'master', 'next', 'latest')) {
+            throw 'Tagged releases must pin versions.json plugin.ref to an immutable commit or tag.'
+          }
+
+      - name: Checkout pinned DeepSeek Harness
+        uses: actions/checkout@v4
+        with:
+          repository: deepseek-ai/deepseek-harness
+          ref: ${{ steps.versions.outputs.dsh_ref }}
+          path: .build/dsh
+
+      - name: Checkout PRTS plugin
+        uses: actions/checkout@v4
+        with:
+          repository: HTian-qwq/prts-terrarchive
+          ref: ${{ inputs.plugin_ref || steps.versions.outputs.plugin_ref }}
+          path: .build/plugin
+
+      - name: Set up build Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ steps.versions.outputs.node }}
+
+      - name: Activate pinned pnpm
+        shell: pwsh
+        run: corepack prepare pnpm@${{ steps.versions.outputs.pnpm }} --activate
+
+      - name: Check portable builder and plugin
+        shell: pwsh
+        run: |
+          npm run check
+          npm test
+          Push-Location .build/plugin
+          npm run check
+          Pop-Location
+
+      - name: Install and build official DSH
+        working-directory: .build/dsh
+        shell: pwsh
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm run build:official
+
+      - name: Prepare exact deploy build allowlist
+        shell: pwsh
+        run: node scripts/prepare-dsh-workspace.mjs .build/dsh
+
+      - name: Deploy official locked DSH runtime closure
+        working-directory: .build/dsh
+        shell: pwsh
+        run: |
+          pnpm --config.node-linker=hoisted --config.inject-workspace-packages=true --filter dsh-python-runtime-closure --prod deploy --frozen-lockfile "$env:GITHUB_WORKSPACE/.build/dsh-deploy"
+
+      - name: Complete declared DSH workspace peer closure
+        shell: pwsh
+        run: node scripts/complete-dsh-workspace-closure.mjs .build/dsh .build/dsh-deploy
+
+      - name: Download and verify portable Node.js
+        shell: pwsh
+        run: |
+          $version = '${{ steps.versions.outputs.node }}'
+          $file = "node-v$version-win-x64.zip"
+          $base = "https://nodejs.org/dist/v$version"
+          Invoke-WebRequest "$base/$file" -OutFile ".build/$file"
+          Invoke-WebRequest "$base/SHASUMS256.txt" -OutFile '.build/SHASUMS256.txt'
+          $line = Get-Content '.build/SHASUMS256.txt' | Where-Object { $_ -match "  $([regex]::Escape($file))$" }
+          if (-not $line) { throw "Node checksum entry not found: $file" }
+          $expected = ($line -split '\s+')[0].ToLowerInvariant()
+          $actual = (Get-FileHash ".build/$file" -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $expected) { throw "Node checksum mismatch" }
+          Expand-Archive ".build/$file" -DestinationPath '.build/node-expanded'
+          Move-Item ".build/node-expanded/node-v$version-win-x64" '.build/node'
+
+      - name: Assemble portable directory
+        shell: pwsh
+        run: |
+          $name = 'PRTS-Terrarchive-Portable-windows-x64'
+          node scripts/assemble.mjs `
+            --dsh-deploy .build/dsh-deploy `
+            --dsh-source .build/dsh `
+            --plugin .build/plugin `
+            --node-dir .build/node `
+            --out "dist/$name"
+
+      - name: Smoke test packaged Host and plugin
+        shell: pwsh
+        run: node scripts/smoke-artifact.mjs dist/PRTS-Terrarchive-Portable-windows-x64
+
+      - name: Archive and checksum
+        shell: pwsh
+        run: |
+          $name = 'PRTS-Terrarchive-Portable-windows-x64'
+          Compress-Archive -Path "dist/$name" -DestinationPath "dist/$name.zip" -CompressionLevel Optimal
+          $hash = (Get-FileHash "dist/$name.zip" -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $name.zip" | Set-Content "dist/$name.zip.sha256" -Encoding ascii
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PRTS-Terrarchive-Portable-windows-x64
+          path: |
+            dist/PRTS-Terrarchive-Portable-windows-x64.zip
+            dist/PRTS-Terrarchive-Portable-windows-x64.zip.sha256
+          if-no-files-found: error
+
+      - name: Publish tagged GitHub release
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$env:GITHUB_REF_NAME" `
+            'dist/PRTS-Terrarchive-Portable-windows-x64.zip' `
+            'dist/PRTS-Terrarchive-Portable-windows-x64.zip.sha256' `
+            --title "PRTS Terrarchive Portable $env:GITHUB_REF_NAME" `
+            --generate-notes

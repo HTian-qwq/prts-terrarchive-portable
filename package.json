@@ -1,0 +1,15 @@
+{
+  "name": "prts-terrarchive-portable",
+  "version": "0.1.0-alpha.1",
+  "private": true,
+  "type": "module",
+  "description": "Portable Windows distribution builder for PRTS Terrarchive and DeepSeek Harness",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.19"
+  },
+  "scripts": {
+    "check": "node --check src/portable.mjs && node --check src/launcher.mjs && node --check scripts/prepare-dsh-workspace.mjs && node --check scripts/complete-dsh-workspace-closure.mjs && node --check scripts/assemble.mjs && node --check scripts/smoke-artifact.mjs",
+    "test": "node --test test/*.test.js"
+  }
+}
