@@ -98,7 +98,7 @@ Invoke-Checked dotnet restore (Join-Path $RepositoryRoot 'desktop\PrtsTerrarchiv
 Invoke-Checked dotnet publish (Join-Path $RepositoryRoot 'desktop\PrtsTerrarchive.Desktop.csproj') `
     -c Release -r win-x64 --self-contained true --no-restore `
     -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
-    -p:DebugType=None -p:DebugSymbols=false -o $DesktopPublish
+    -p:DebugType=None -p:DebugSymbols=false --output $DesktopPublish
 $DesktopExe = Join-Path $DesktopPublish 'PRTS Terrarchive.exe'
 Assert-File $DesktopExe 'desktop executable'
 
