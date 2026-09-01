@@ -21,7 +21,6 @@ internal sealed class MainWindow : Form
     private readonly Panel dragStrip;
     private readonly FlowLayoutPanel windowControls;
     private readonly Button maximizeButton;
-    private string chromeSkin = "harness";
     private readonly NotifyIcon trayIcon;
     private readonly ToolStripMenuItem restartMenuItem;
     private bool allowClose;
@@ -63,7 +62,6 @@ internal sealed class MainWindow : Form
         Controls.Add(dragStrip);
         Controls.Add(windowControls);
         loadingOverlay.BringToFront();
-        ApplyChromeSkin("harness");
         BringWindowChromeToFront();
 
         var showMenuItem = new ToolStripMenuItem("显示窗口", null, (_, _) => RestoreFromTray())
@@ -148,28 +146,105 @@ internal sealed class MainWindow : Form
         browser.CoreWebView2.Settings.AreBrowserAcceleratorKeysEnabled = true;
         await browser.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync("""
             (() => {
-              const prefix = 'prts-shell-skin:';
-              let last = '';
-              const send = () => {
-                const skin = document.body?.dataset?.prtsSkin || 'harness';
-                if (skin === last) return;
-                last = skin;
-                window.chrome.webview.postMessage(prefix + skin);
-              };
-              const observer = new MutationObserver(send);
-              const observe = () => {
-                if (document.documentElement) {
-                  observer.observe(document.documentElement, {
-                    attributes: true,
-                    subtree: true,
-                    attributeFilter: ['data-prts-skin'],
-                  });
+              if (window !== window.top) return;
+              const post = action => window.chrome.webview.postMessage('prts-shell-action:' + action);
+              const install = () => {
+                if (!document.body || document.getElementById('prts-desktop-chrome')) return;
+
+                const style = document.createElement('style');
+                style.id = 'prts-desktop-chrome-style';
+                style.textContent = `
+                  #prts-desktop-drag {
+                    position: fixed; z-index: 2147483646; inset: 0 128px auto 0; height: 8px;
+                    cursor: default; user-select: none; -webkit-user-select: none;
+                  }
+                  #prts-desktop-chrome {
+                    --shell-fg: rgba(22, 25, 29, .78);
+                    --shell-bg: rgba(250, 250, 248, .76);
+                    --shell-border: rgba(20, 24, 28, .10);
+                    --shell-hover: rgba(20, 24, 28, .075);
+                    position: fixed; z-index: 2147483647; top: 10px; right: 12px;
+                    box-sizing: border-box; display: flex; align-items: center; gap: 2px;
+                    height: 32px; padding: 3px;
+                    color: var(--shell-fg); background: var(--shell-bg);
+                    border: 1px solid var(--shell-border); border-radius: 13px;
+                    box-shadow: 0 7px 24px rgba(17, 20, 24, .10), inset 0 1px rgba(255,255,255,.62);
+                    backdrop-filter: blur(16px) saturate(1.15);
+                    -webkit-backdrop-filter: blur(16px) saturate(1.15);
+                    user-select: none; -webkit-user-select: none;
+                  }
+                  #prts-desktop-chrome button {
+                    appearance: none; box-sizing: border-box; display: grid; place-items: center;
+                    width: 31px; height: 24px; margin: 0; padding: 0;
+                    color: inherit; background: transparent; border: 0; border-radius: 9px;
+                    outline: none; cursor: default; transition: background-color 120ms ease, color 120ms ease;
+                  }
+                  #prts-desktop-chrome button:hover { background: var(--shell-hover); }
+                  #prts-desktop-chrome button:active { transform: translateY(1px); }
+                  #prts-desktop-chrome button[data-action='close']:hover { color: white; background: #c42b2b; }
+                  #prts-desktop-chrome svg {
+                    width: 12px; height: 12px; display: block; fill: none;
+                    stroke: currentColor; stroke-width: 1.45; stroke-linecap: round; stroke-linejoin: round;
+                  }
+
+                  body[data-prts-skin='agent'] #prts-desktop-chrome {
+                    --shell-bg: rgba(248, 248, 245, .70);
+                    --shell-border: rgba(25, 28, 31, .12);
+                    --shell-hover: rgba(25, 28, 31, .09);
+                    box-shadow: 0 8px 26px rgba(12, 15, 18, .12), inset 0 1px rgba(255,255,255,.68);
+                  }
+
+                  body[data-prts-skin='endfield-aic'] #prts-desktop-chrome {
+                    --shell-fg: #f5fa3d; --shell-bg: rgba(7, 10, 11, .84);
+                    --shell-border: rgba(245, 250, 61, .40); --shell-hover: rgba(245, 250, 61, .13);
+                    top: 9px; right: 12px; gap: 0; height: 31px; padding: 2px 3px;
+                    border-radius: 5px; box-shadow: 0 8px 22px rgba(0,0,0,.30), inset 0 0 18px rgba(245,250,61,.025);
+                    clip-path: polygon(7px 0, 100% 0, 100% calc(100% - 7px), calc(100% - 7px) 100%, 0 100%, 0 7px);
+                  }
+                  body[data-prts-skin='endfield-aic'] #prts-desktop-chrome button {
+                    width: 31px; height: 25px; border-radius: 3px;
+                  }
+                  body[data-prts-skin='endfield-aic'] #prts-desktop-chrome button + button {
+                    border-left: 1px solid rgba(245, 250, 61, .16);
+                  }
+                  body[data-prts-skin='endfield-aic'] #prts-desktop-chrome button[data-action='close']:hover {
+                    color: #080a0b; background: #f5fa3d;
+                  }
+                `;
+
+                const drag = document.createElement('div');
+                drag.id = 'prts-desktop-drag';
+                drag.setAttribute('aria-hidden', 'true');
+                drag.addEventListener('pointerdown', event => {
+                  if (event.button === 0) post('drag');
+                });
+                drag.addEventListener('dblclick', () => post('maximize'));
+
+                const chrome = document.createElement('div');
+                chrome.id = 'prts-desktop-chrome';
+                chrome.setAttribute('role', 'group');
+                chrome.setAttribute('aria-label', '窗口控制');
+                const icons = {
+                  minimize: '<svg viewBox="0 0 12 12"><path d="M2 8.5h8"/></svg>',
+                  maximize: '<svg viewBox="0 0 12 12"><rect x="2.25" y="2.25" width="7.5" height="7.5" rx="1"/></svg>',
+                  close: '<svg viewBox="0 0 12 12"><path d="m2.5 2.5 7 7m0-7-7 7"/></svg>',
+                };
+                for (const action of ['minimize', 'maximize', 'close']) {
+                  const button = document.createElement('button');
+                  button.type = 'button';
+                  button.dataset.action = action;
+                  button.title = action === 'minimize' ? '最小化' : action === 'maximize' ? '最大化 / 还原' : '关闭到托盘';
+                  button.setAttribute('aria-label', button.title);
+                  button.innerHTML = icons[action];
+                  button.addEventListener('pointerdown', event => event.stopPropagation());
+                  button.addEventListener('click', event => { event.stopPropagation(); post(action); });
+                  chrome.appendChild(button);
                 }
-                send();
+                (document.head || document.documentElement).appendChild(style);
+                document.body.append(drag, chrome);
               };
-              if (document.documentElement) observe();
-              else document.addEventListener('readystatechange', observe, { once: true });
-              document.addEventListener('DOMContentLoaded', send, { once: true });
+              if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', install, { once: true });
+              else install();
             })();
             """);
         browser.CoreWebView2.WebMessageReceived += (_, args) =>
@@ -177,9 +252,9 @@ internal sealed class MainWindow : Form
             string message;
             try { message = args.TryGetWebMessageAsString(); }
             catch (ArgumentException) { return; }
-            const string prefix = "prts-shell-skin:";
+            const string prefix = "prts-shell-action:";
             if (!message.StartsWith(prefix, StringComparison.Ordinal)) return;
-            RunOnUiThread(() => ApplyChromeSkin(message[prefix.Length..]));
+            RunOnUiThread(() => HandleShellAction(message[prefix.Length..]));
         };
         browser.CoreWebView2.NavigationStarting += (_, args) =>
         {
@@ -202,6 +277,7 @@ internal sealed class MainWindow : Form
             {
                 browser.Visible = true;
                 loadingOverlay.Visible = false;
+                HideNativeChrome();
                 SetStatus("PRTS Host 已就绪");
                 return;
             }
@@ -222,7 +298,7 @@ internal sealed class MainWindow : Form
         hostUri = uri;
         loadingOverlay.Visible = true;
         loadingOverlay.BringToFront();
-        BringWindowChromeToFront();
+        ShowNativeChrome();
         browser.Visible = false;
         retryButton.Visible = false;
         openBrowserButton.Visible = false;
@@ -252,7 +328,7 @@ internal sealed class MainWindow : Form
         browser.Visible = false;
         loadingOverlay.Visible = true;
         loadingOverlay.BringToFront();
-        BringWindowChromeToFront();
+        ShowNativeChrome();
         loadingMessage.Text = title;
         loadingDetail.Text = detail;
         retryButton.Visible = true;
@@ -267,6 +343,8 @@ internal sealed class MainWindow : Form
             hostUri = null;
             browser.Visible = false;
             loadingOverlay.Visible = true;
+            loadingOverlay.BringToFront();
+            ShowNativeChrome();
             retryButton.Visible = false;
             openBrowserButton.Visible = false;
             loadingMessage.Text = "正在重启本地服务";
@@ -502,13 +580,13 @@ internal sealed class MainWindow : Form
 
         var controls = new FlowLayoutPanel
         {
-            Width = 132,
-            Height = 32,
+            Width = 116,
+            Height = 34,
             FlowDirection = FlowDirection.LeftToRight,
             WrapContents = false,
             Margin = Padding.Empty,
-            Padding = Padding.Empty,
-            BackColor = Color.FromArgb(17, 18, 20),
+            Padding = new Padding(4, 3, 4, 3),
+            BackColor = Color.FromArgb(252, 252, 250),
         };
         var minimize = CreateWindowButton("−");
         var maximize = CreateWindowButton("□");
@@ -527,26 +605,51 @@ internal sealed class MainWindow : Form
     {
         var button = new Button
         {
-            Width = 44,
-            Height = 32,
+            Width = 36,
+            Height = 28,
             Margin = Padding.Empty,
             Padding = Padding.Empty,
             Text = text,
             TabStop = false,
             FlatStyle = FlatStyle.Flat,
-            BackColor = Color.FromArgb(17, 18, 20),
-            ForeColor = Color.White,
-            Font = new Font("Segoe UI Symbol", 11F),
+            BackColor = Color.FromArgb(252, 252, 250),
+            ForeColor = Color.FromArgb(35, 38, 42),
+            Font = new Font("Segoe UI Symbol", 10F),
             Cursor = Cursors.Hand,
         };
         button.FlatAppearance.BorderSize = 0;
         button.FlatAppearance.MouseOverBackColor = closeButton
             ? Color.FromArgb(196, 43, 43)
-            : Color.FromArgb(48, 49, 52);
+            : Color.FromArgb(232, 233, 230);
         button.FlatAppearance.MouseDownBackColor = closeButton
             ? Color.FromArgb(154, 30, 30)
-            : Color.FromArgb(64, 65, 68);
+            : Color.FromArgb(218, 220, 217);
+        if (closeButton)
+        {
+            button.MouseEnter += (_, _) => button.ForeColor = Color.White;
+            button.MouseLeave += (_, _) => button.ForeColor = Color.FromArgb(35, 38, 42);
+        }
         return button;
+    }
+
+    private void HandleShellAction(string action)
+    {
+        switch (action)
+        {
+            case "minimize":
+                WindowState = FormWindowState.Minimized;
+                break;
+            case "maximize":
+                ToggleMaximize();
+                break;
+            case "close":
+                Close();
+                break;
+            case "drag":
+                ReleaseCapture();
+                SendMessage(Handle, WmNcLButtonDown, HtCaption, 0);
+                break;
+        }
     }
 
     private void ToggleMaximize()
@@ -563,56 +666,31 @@ internal sealed class MainWindow : Form
     private void LayoutWindowChrome()
     {
         dragStrip.SetBounds(0, 0, Math.Max(0, ClientSize.Width - windowControls.Width), 7);
-        windowControls.Location = new Point(Math.Max(0, ClientSize.Width - windowControls.Width), 0);
-    }
-
-    private void ApplyChromeSkin(string skin)
-    {
-        chromeSkin = skin is "agent" or "endfield-aic" ? skin : "harness";
-        var background = chromeSkin switch
-        {
-            "agent" => Color.FromArgb(17, 18, 20),
-            "endfield-aic" => Color.FromArgb(8, 10, 12),
-            _ => Color.FromArgb(248, 249, 250),
-        };
-        var foreground = chromeSkin switch
-        {
-            "endfield-aic" => Color.FromArgb(250, 255, 63),
-            "agent" => Color.White,
-            _ => Color.FromArgb(46, 49, 54),
-        };
-        var hover = chromeSkin switch
-        {
-            "endfield-aic" => Color.FromArgb(38, 42, 34),
-            "agent" => Color.FromArgb(48, 49, 52),
-            _ => Color.FromArgb(229, 232, 235),
-        };
-
-        dragStrip.BackColor = background;
-        windowControls.BackColor = background;
-        foreach (var button in windowControls.Controls.OfType<Button>())
-        {
-            var close = Equals(button.Tag, "close");
-            button.BackColor = background;
-            button.ForeColor = foreground;
-            button.FlatAppearance.BorderSize = chromeSkin == "endfield-aic" ? 1 : 0;
-            button.FlatAppearance.BorderColor = chromeSkin == "endfield-aic"
-                ? Color.FromArgb(88, 92, 34)
-                : background;
-            button.FlatAppearance.MouseOverBackColor = close
-                ? chromeSkin == "endfield-aic" ? Color.FromArgb(72, 75, 14) : Color.FromArgb(196, 43, 43)
-                : hover;
-            button.FlatAppearance.MouseDownBackColor = close
-                ? chromeSkin == "endfield-aic" ? Color.FromArgb(92, 96, 12) : Color.FromArgb(154, 30, 30)
-                : hover;
-        }
-        windowControls.Invalidate(true);
+        windowControls.Location = new Point(Math.Max(0, ClientSize.Width - windowControls.Width - 10), 9);
+        using var path = GraphicsExtensions.CreateRoundedRectanglePath(
+            new Rectangle(0, 0, windowControls.Width, windowControls.Height), 13);
+        var previousRegion = windowControls.Region;
+        windowControls.Region = new Region(path);
+        previousRegion?.Dispose();
     }
 
     private void BringWindowChromeToFront()
     {
         dragStrip.BringToFront();
         windowControls.BringToFront();
+    }
+
+    private void ShowNativeChrome()
+    {
+        dragStrip.Visible = true;
+        windowControls.Visible = true;
+        BringWindowChromeToFront();
+    }
+
+    private void HideNativeChrome()
+    {
+        dragStrip.Visible = false;
+        windowControls.Visible = false;
     }
 
     protected override void WndProc(ref Message message)
@@ -698,15 +776,21 @@ internal sealed class PrtsLogoControl : Control
 
 internal static class GraphicsExtensions
 {
-    public static void FillRoundedRectangle(this Graphics graphics, Brush brush, Rectangle bounds, int radius)
+    public static GraphicsPath CreateRoundedRectanglePath(Rectangle bounds, int radius)
     {
         var diameter = radius * 2;
-        using var path = new GraphicsPath();
+        var path = new GraphicsPath();
         path.AddArc(bounds.Left, bounds.Top, diameter, diameter, 180, 90);
         path.AddArc(bounds.Right - diameter, bounds.Top, diameter, diameter, 270, 90);
         path.AddArc(bounds.Right - diameter, bounds.Bottom - diameter, diameter, diameter, 0, 90);
         path.AddArc(bounds.Left, bounds.Bottom - diameter, diameter, diameter, 90, 90);
         path.CloseFigure();
+        return path;
+    }
+
+    public static void FillRoundedRectangle(this Graphics graphics, Brush brush, Rectangle bounds, int radius)
+    {
+        using var path = CreateRoundedRectanglePath(bounds, radius);
         graphics.FillPath(brush, path);
     }
 }
