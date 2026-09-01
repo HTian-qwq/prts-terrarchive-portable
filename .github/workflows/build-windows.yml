@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   windows-x64:
-    runs-on: windows-2025
+    runs-on: windows-latest
     steps:
       - name: Checkout portable builder
         uses: actions/checkout@v4
