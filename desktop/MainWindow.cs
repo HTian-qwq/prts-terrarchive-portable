@@ -711,13 +711,13 @@ internal sealed class MainWindow : Form
             oldRegion?.Dispose();
 
             var cornerPreference = WindowState == FormWindowState.Maximized
-                ? DwmWindowCornerPreference.DoNotRound
-                : DwmWindowCornerPreference.Round;
+                ? (int)DwmWindowCornerPreference.DoNotRound
+                : (int)DwmWindowCornerPreference.Round;
             _ = DwmSetWindowAttribute(
                 Handle,
                 DwmWindowAttribute.WindowCornerPreference,
                 ref cornerPreference,
-                Marshal.SizeOf<DwmWindowCornerPreference>());
+                sizeof(int));
 
             var borderColor = unchecked((int)0xfffffffe);
             _ = DwmSetWindowAttribute(
@@ -793,13 +793,6 @@ internal sealed class MainWindow : Form
         DoNotRound = 1,
         Round = 2,
     }
-
-    [DllImport("dwmapi.dll")]
-    private static extern int DwmSetWindowAttribute(
-        IntPtr window,
-        DwmWindowAttribute attribute,
-        ref DwmWindowCornerPreference value,
-        int valueSize);
 
     [DllImport("dwmapi.dll")]
     private static extern int DwmSetWindowAttribute(
