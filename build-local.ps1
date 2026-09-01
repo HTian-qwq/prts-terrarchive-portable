@@ -22,9 +22,11 @@ $NextArchive = "$OutputDirectory.next.zip"
 $Checksum = "$Archive.sha256"
 
 function Invoke-Checked {
-    param([Parameter(Mandatory = $true)][string]$Command,
-          [Parameter(ValueFromRemainingArguments = $true)][string[]]$Arguments)
-    & $Command @Arguments
+    param(
+        [Parameter(Mandatory = $true)][string]$Command,
+        [string[]]$ArgumentList = @()
+    )
+    & $Command @ArgumentList
     if ($LASTEXITCODE -ne 0) {
         throw "$Command failed with exit code $LASTEXITCODE"
     }
@@ -56,64 +58,73 @@ if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) { throw '.NET SDK w
 
 if (-not (Test-Path (Join-Path $DshSource '.git'))) {
     Write-Host 'Fetching pinned DeepSeek Harness...' -ForegroundColor Cyan
-    Invoke-Checked git clone --no-checkout https://github.com/deepseek-ai/deepseek-harness.git $DshSource
-    Invoke-Checked git -C $DshSource fetch origin ([string]$Versions.dsh.commit) --depth 1
-    Invoke-Checked git -C $DshSource checkout --detach ([string]$Versions.dsh.commit)
+    Invoke-Checked -Command git -ArgumentList @(
+        'clone', '--no-checkout', 'https://github.com/deepseek-ai/deepseek-harness.git', $DshSource)
+    Invoke-Checked -Command git -ArgumentList @(
+        '-C', $DshSource, 'fetch', 'origin', ([string]$Versions.dsh.commit), '--depth', '1')
+    Invoke-Checked -Command git -ArgumentList @(
+        '-C', $DshSource, 'checkout', '--detach', ([string]$Versions.dsh.commit))
 }
 $DshCommit = (git -C $DshSource rev-parse HEAD).Trim()
 if ($LASTEXITCODE -ne 0 -or $DshCommit -ne ([string]$Versions.dsh.commit)) {
     throw "DSH revision mismatch: expected $($Versions.dsh.commit), found $DshCommit"
 }
 
-Invoke-Checked $Corepack prepare "pnpm@$($Versions.pnpm)" --activate
+Invoke-Checked -Command $Corepack -ArgumentList @('prepare', "pnpm@$($Versions.pnpm)", '--activate')
 if (-not $SkipDshBuild) {
     Write-Host 'Installing and building official DSH...' -ForegroundColor Cyan
     Push-Location $DshSource
     try {
-        Invoke-Checked $Corepack pnpm install --frozen-lockfile
-        Invoke-Checked $Corepack pnpm run build:official
+        Invoke-Checked -Command $Corepack -ArgumentList @('pnpm', 'install', '--frozen-lockfile')
+        Invoke-Checked -Command $Corepack -ArgumentList @('pnpm', 'run', 'build:official')
     } finally { Pop-Location }
 }
 
 Write-Host 'Creating the production runtime closure...' -ForegroundColor Cyan
-Invoke-Checked $Node (Join-Path $RepositoryRoot 'scripts\prepare-dsh-workspace.mjs') $DshSource
+Invoke-Checked -Command $Node -ArgumentList @(
+    (Join-Path $RepositoryRoot 'scripts\prepare-dsh-workspace.mjs'), $DshSource)
 if (Test-Path -LiteralPath $DshDeploy) {
     Remove-Item -LiteralPath $DshDeploy -Recurse -Force
 }
 Push-Location $DshSource
 try {
-    Invoke-Checked $Corepack pnpm --config.node-linker=hoisted `
-        --config.inject-workspace-packages=true --filter dsh-python-runtime-closure `
-        --prod deploy --frozen-lockfile $DshDeploy
+    Invoke-Checked -Command $Corepack -ArgumentList @(
+        'pnpm', '--config.node-linker=hoisted', '--config.inject-workspace-packages=true',
+        '--filter', 'dsh-python-runtime-closure', '--prod', 'deploy', '--frozen-lockfile', $DshDeploy)
 } finally { Pop-Location }
-Invoke-Checked $Node (Join-Path $RepositoryRoot 'scripts\complete-dsh-workspace-closure.mjs') `
-    $DshSource $DshDeploy
+Invoke-Checked -Command $Node -ArgumentList @(
+    (Join-Path $RepositoryRoot 'scripts\complete-dsh-workspace-closure.mjs'), $DshSource, $DshDeploy)
 
 Write-Host 'Publishing the single-file desktop application...' -ForegroundColor Cyan
 if (Test-Path -LiteralPath $DesktopPublish) {
     Remove-Item -LiteralPath $DesktopPublish -Recurse -Force
 }
-Invoke-Checked dotnet restore (Join-Path $RepositoryRoot 'desktop\PrtsTerrarchive.Desktop.csproj') `
-    -r win-x64 --locked-mode
-Invoke-Checked dotnet publish (Join-Path $RepositoryRoot 'desktop\PrtsTerrarchive.Desktop.csproj') `
-    -c Release -r win-x64 --self-contained true --no-restore `
-    -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
-    -p:DebugType=None -p:DebugSymbols=false --output $DesktopPublish
+$DesktopProject = Join-Path $RepositoryRoot 'desktop\PrtsTerrarchive.Desktop.csproj'
+Invoke-Checked -Command dotnet -ArgumentList @(
+    'restore', $DesktopProject, '-r', 'win-x64', '--locked-mode')
+Invoke-Checked -Command dotnet -ArgumentList @(
+    'publish', $DesktopProject, '-c', 'Release', '-r', 'win-x64',
+    '--self-contained', 'true', '--no-restore',
+    '-p:PublishSingleFile=true', '-p:IncludeNativeLibrariesForSelfExtract=true',
+    '-p:DebugType=None', '-p:DebugSymbols=false', '--output', $DesktopPublish)
 $DesktopExe = Join-Path $DesktopPublish 'PRTS Terrarchive.exe'
 Assert-File $DesktopExe 'desktop executable'
 
 Write-Host 'Assembling the portable distribution...' -ForegroundColor Cyan
-Invoke-Checked $Node (Join-Path $RepositoryRoot 'scripts\assemble.mjs') `
-    --dsh-deploy $DshDeploy `
-    --dsh-source $DshSource `
-    --plugin (Resolve-Path $PluginPath).Path `
-    --node-dir $NodeDirectory `
-    --desktop-exe $DesktopExe `
-    --out $OutputDirectory
+Invoke-Checked -Command $Node -ArgumentList @(
+    (Join-Path $RepositoryRoot 'scripts\assemble.mjs'),
+    '--dsh-deploy', $DshDeploy,
+    '--dsh-source', $DshSource,
+    '--plugin', (Resolve-Path $PluginPath).Path,
+    '--node-dir', $NodeDirectory,
+    '--desktop-exe', $DesktopExe,
+    '--out', $OutputDirectory)
 
-Invoke-Checked $Node (Join-Path $RepositoryRoot 'scripts\audit-windows-artifact.mjs') $OutputDirectory
+Invoke-Checked -Command $Node -ArgumentList @(
+    (Join-Path $RepositoryRoot 'scripts\audit-windows-artifact.mjs'), $OutputDirectory)
 if (-not $SkipSmoke) {
-    Invoke-Checked $Node (Join-Path $RepositoryRoot 'scripts\smoke-artifact.mjs') $OutputDirectory
+    Invoke-Checked -Command $Node -ArgumentList @(
+        (Join-Path $RepositoryRoot 'scripts\smoke-artifact.mjs'), $OutputDirectory)
 }
 
 Write-Host 'Creating ZIP and checksum...' -ForegroundColor Cyan
