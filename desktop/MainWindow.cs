@@ -21,6 +21,7 @@ internal sealed class MainWindow : Form
     private readonly Panel dragStrip;
     private readonly FlowLayoutPanel windowControls;
     private readonly Button maximizeButton;
+    private string chromeSkin = "harness";
     private readonly NotifyIcon trayIcon;
     private readonly ToolStripMenuItem restartMenuItem;
     private bool allowClose;
@@ -62,6 +63,7 @@ internal sealed class MainWindow : Form
         Controls.Add(dragStrip);
         Controls.Add(windowControls);
         loadingOverlay.BringToFront();
+        ApplyChromeSkin("harness");
         BringWindowChromeToFront();
 
         var showMenuItem = new ToolStripMenuItem("显示窗口", null, (_, _) => RestoreFromTray())
@@ -144,6 +146,41 @@ internal sealed class MainWindow : Form
         browser.CoreWebView2.Settings.IsStatusBarEnabled = false;
         browser.CoreWebView2.Settings.IsZoomControlEnabled = true;
         browser.CoreWebView2.Settings.AreBrowserAcceleratorKeysEnabled = true;
+        await browser.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync("""
+            (() => {
+              const prefix = 'prts-shell-skin:';
+              let last = '';
+              const send = () => {
+                const skin = document.body?.dataset?.prtsSkin || 'harness';
+                if (skin === last) return;
+                last = skin;
+                window.chrome.webview.postMessage(prefix + skin);
+              };
+              const observer = new MutationObserver(send);
+              const observe = () => {
+                if (document.documentElement) {
+                  observer.observe(document.documentElement, {
+                    attributes: true,
+                    subtree: true,
+                    attributeFilter: ['data-prts-skin'],
+                  });
+                }
+                send();
+              };
+              if (document.documentElement) observe();
+              else document.addEventListener('readystatechange', observe, { once: true });
+              document.addEventListener('DOMContentLoaded', send, { once: true });
+            })();
+            """);
+        browser.CoreWebView2.WebMessageReceived += (_, args) =>
+        {
+            string message;
+            try { message = args.TryGetWebMessageAsString(); }
+            catch (ArgumentException) { return; }
+            const string prefix = "prts-shell-skin:";
+            if (!message.StartsWith(prefix, StringComparison.Ordinal)) return;
+            RunOnUiThread(() => ApplyChromeSkin(message[prefix.Length..]));
+        };
         browser.CoreWebView2.NavigationStarting += (_, args) =>
         {
             if (IsAllowedLocalUri(args.Uri) || args.Uri == "about:blank") return;
@@ -476,6 +513,7 @@ internal sealed class MainWindow : Form
         var minimize = CreateWindowButton("−");
         var maximize = CreateWindowButton("□");
         var close = CreateWindowButton("×", closeButton: true);
+        close.Tag = "close";
         minimize.Click += (_, _) => WindowState = FormWindowState.Minimized;
         maximize.Click += (_, _) => ToggleMaximize();
         close.Click += (_, _) => Close();
@@ -526,6 +564,49 @@ internal sealed class MainWindow : Form
     {
         dragStrip.SetBounds(0, 0, Math.Max(0, ClientSize.Width - windowControls.Width), 7);
         windowControls.Location = new Point(Math.Max(0, ClientSize.Width - windowControls.Width), 0);
+    }
+
+    private void ApplyChromeSkin(string skin)
+    {
+        chromeSkin = skin is "agent" or "endfield-aic" ? skin : "harness";
+        var background = chromeSkin switch
+        {
+            "agent" => Color.FromArgb(17, 18, 20),
+            "endfield-aic" => Color.FromArgb(8, 10, 12),
+            _ => Color.FromArgb(248, 249, 250),
+        };
+        var foreground = chromeSkin switch
+        {
+            "endfield-aic" => Color.FromArgb(250, 255, 63),
+            "agent" => Color.White,
+            _ => Color.FromArgb(46, 49, 54),
+        };
+        var hover = chromeSkin switch
+        {
+            "endfield-aic" => Color.FromArgb(38, 42, 34),
+            "agent" => Color.FromArgb(48, 49, 52),
+            _ => Color.FromArgb(229, 232, 235),
+        };
+
+        dragStrip.BackColor = background;
+        windowControls.BackColor = background;
+        foreach (var button in windowControls.Controls.OfType<Button>())
+        {
+            var close = Equals(button.Tag, "close");
+            button.BackColor = background;
+            button.ForeColor = foreground;
+            button.FlatAppearance.BorderSize = chromeSkin == "endfield-aic" ? 1 : 0;
+            button.FlatAppearance.BorderColor = chromeSkin == "endfield-aic"
+                ? Color.FromArgb(88, 92, 34)
+                : background;
+            button.FlatAppearance.MouseOverBackColor = close
+                ? chromeSkin == "endfield-aic" ? Color.FromArgb(72, 75, 14) : Color.FromArgb(196, 43, 43)
+                : hover;
+            button.FlatAppearance.MouseDownBackColor = close
+                ? chromeSkin == "endfield-aic" ? Color.FromArgb(92, 96, 12) : Color.FromArgb(154, 30, 30)
+                : hover;
+        }
+        windowControls.Invalidate(true);
     }
 
     private void BringWindowChromeToFront()
