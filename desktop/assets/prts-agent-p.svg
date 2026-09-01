@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="PRTS Agent P">
+  <rect x="16" y="16" width="224" height="224" rx="68" fill="#111214"/>
+  <path fill="#fff" fill-rule="evenodd" transform="skewX(-5) translate(10 0)"
+    d="M78 198V58h59c38 0 60 19 60 51 0 34-23 53-61 53h-28v36H78Zm30-113v50h27c20 0 31-9 31-26 0-16-11-24-31-24h-27Z"/>
+</svg>
