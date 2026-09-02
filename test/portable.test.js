@@ -139,6 +139,22 @@ test('无边框桌面外壳提供可拖动标题区与八方向缩放', () => {
   }
 })
 
+test('正式构建固定 ModelScope 语料并在缺失时给出桌面提示', () => {
+  const root = join(import.meta.dirname, '..')
+  const build = readFileSync(join(root, 'build-local.ps1'), 'utf8')
+  const assemble = readFileSync(join(root, 'scripts', 'assemble.mjs'), 'utf8')
+  const launcher = readFileSync(join(root, 'src', 'launcher.mjs'), 'utf8')
+  const host = readFileSync(join(root, 'desktop', 'DshHost.cs'), 'utf8')
+  const window = readFileSync(join(root, 'desktop', 'MainWindow.cs'), 'utf8')
+  assert.match(build, /fetch-modelscope-corpus\.mjs/u)
+  assert.match(build, /--corpus-releases/u)
+  assert.match(assemble, /bundled-modelscope-corpus/u)
+  assert.match(assemble, /join\(args\.out, 'corpus', 'releases'\)/u)
+  assert.match(launcher, /PRTS_CORPUS_RELEASES_DIR/u)
+  assert.match(host, /WarnIfCorpusUnavailable/u)
+  assert.match(window, /语料需要处理/u)
+})
+
 test('DSH Markdown 补丁支持中文两侧的引号加粗并校验构建结果', () => {
   const root = mkdtempSync(join(tmpdir(), 'prts-dsh-markdown-'))
   const parserDir = join(root, 'packages', 'client', 'ui-primitives', 'src', 'markdown')

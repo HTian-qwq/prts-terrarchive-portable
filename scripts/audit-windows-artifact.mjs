@@ -51,12 +51,45 @@ const gameAssetNotice = join(artifact, 'LICENSES', 'prts-terrarchive-GAME_ASSETS
 if (!existsSync(gameAssetNotice) || !readFileSync(gameAssetNotice, 'utf8').includes('not covered by the MIT License')) {
   throw new Error('发行包缺少游戏相关资源的非 MIT 授权边界声明。')
 }
+const distributionNotice = readFileSync(join(artifact, 'LICENSES', 'NOTICE.txt'), 'utf8')
+if (!distributionNotice.includes('modelscope.cn/datasets/HTiantian/prts-agent-corpus-arknights-gamedata')
+    || !distributionNotice.includes('Corpus data is not licensed')) {
+  throw new Error('发行包缺少内置 ModelScope 语料的来源与非 MIT 声明。')
+}
 
 if (!manifest.features?.includes('prts-agent-live-retrieval-scene')) {
   throw new Error('发行清单没有声明 PRTS Agent 动态检索场景能力。')
 }
 if (!manifest.features?.includes('readable-title-pagination')) {
   throw new Error('发行清单没有声明可读标题分页能力。')
+}
+if (!manifest.features?.includes('bundled-modelscope-corpus')
+    || manifest.corpusSource !== 'modelscope') {
+  throw new Error('发行清单没有声明随包提供的 ModelScope 语料。')
+}
+const corpusRoot = join(artifact, 'corpus', 'releases')
+const corpusPointerPath = join(corpusRoot, 'current.json')
+if (!existsSync(corpusPointerPath)) throw new Error('发行包缺少 corpus/releases/current.json。')
+const corpusPointer = JSON.parse(readFileSync(corpusPointerPath, 'utf8'))
+const corpusManifestPath = join(corpusRoot, String(corpusPointer.release_id || ''), 'release-manifest.json')
+if (!existsSync(corpusManifestPath)) throw new Error('发行包缺少当前语料 release-manifest.json。')
+const corpusManifest = JSON.parse(readFileSync(corpusManifestPath, 'utf8'))
+if (corpusPointer.release_id !== manifest.corpusReleaseId
+    || corpusManifest.release_id !== manifest.corpusReleaseId
+    || corpusPointer.data_version !== manifest.corpusDataVersion
+    || corpusManifest.data_version !== manifest.corpusDataVersion
+    || !Number.isInteger(corpusManifest.document_count) || corpusManifest.document_count < 1000) {
+  throw new Error('发行包内语料的 release/data_version/文档数与固定版本不符。')
+}
+const corpusPackIds = new Set((corpusManifest.packs || []).map((pack) => pack.pack_id))
+if (!(corpusManifest.required_packs || []).length
+    || corpusManifest.required_packs.some((packId) => !corpusPackIds.has(packId))) {
+  throw new Error('发行包内语料缺少 required_packs。')
+}
+for (const pack of corpusManifest.packs || []) {
+  if (!existsSync(join(corpusRoot, manifest.corpusReleaseId, String(pack.manifest_path || '')))) {
+    throw new Error(`发行包内语料缺少 pack manifest：${pack.manifest_path ?? 'unknown'}`)
+  }
 }
 if (!manifest.dshCompatibilityPatches?.includes('cjk-quoted-strong-emphasis')) {
   throw new Error('发行清单没有声明 DSH CJK Markdown 兼容补丁。')
@@ -111,4 +144,5 @@ console.log([
   `  Desktop ${manifest.desktopFramework} / WebView2 SDK ${manifest.webView2SdkVersion}`,
   `  DSH ${manifest.dshVersion} (${manifest.dshCommit})`,
   `  Plugin ${manifest.pluginVersion} (${manifest.pluginCommit})`,
+  `  Corpus ${manifest.corpusReleaseId} (${manifest.corpusDataVersion})`,
 ].join('\n'))

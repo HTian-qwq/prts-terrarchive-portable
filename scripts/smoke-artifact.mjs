@@ -22,6 +22,8 @@ const smokeEnv = {
   PATH: [dirname(node), ...systemPaths].join(delimiter),
   PRTS_DATA_DIR: home,
   PRTS_NO_OPEN: '1',
+  PRTS_PORTABLE: '1',
+  PRTS_CORPUS_RELEASES_DIR: join(artifact, 'corpus', 'releases'),
 }
 
 function run(program, args, options = {}) {

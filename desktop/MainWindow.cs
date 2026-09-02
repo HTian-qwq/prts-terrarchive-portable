@@ -91,6 +91,8 @@ internal sealed class MainWindow : Form
 
         host.Ready += uri => RunOnUiThread(() => NavigateToHost(uri));
         host.StatusChanged += message => RunOnUiThread(() => SetStatus(message));
+        host.Warning += message => RunOnUiThread(() => MessageBox.Show(this, message,
+            "语料需要处理", MessageBoxButtons.OK, MessageBoxIcon.Warning));
         Shown += async (_, _) => await StartHostAsync();
         Resize += (_, _) =>
         {

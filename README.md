@@ -13,10 +13,10 @@ Node.js、固定版本 DeepSeek Harness 和 `prts-terrarchive`，用户完整解
 - 预装 PRTS 插件及「PRTS 模式」preset
 - 单实例桌面窗口和系统托盘菜单
 - 关闭窗口缩到托盘，可显示窗口、重启服务、打开数据目录或彻底退出
-- WebView2 数据、会话、凭据、设置和语料全部位于发行目录的 `userdata/`
+- WebView2 数据、会话、凭据和设置位于 `userdata/`；随包语料位于 `corpus/`
 - 只绑定 `127.0.0.1`，使用 DSH 自己生成的访问 token
 - 使用 Windows Job Object 管理 Node/DSH 进程树，退出时不遗留后台进程
-- 语料首次使用时从 ModelScope 下载，不包含在 GitHub 发行包中
+- 正式发行包在构建时从 ModelScope 下载固定版本语料，校验后随 ZIP 放入 `corpus/`
 
 除 ModelScope 语料外，插件所需地图、皮肤模型和贴图随包提供。第一阶段不提供静默自动更新
 或局域网开放。程序版本、DSH 版本和插件版本分别记录在 `release-manifest.json`，便于复现
@@ -27,7 +27,7 @@ Node.js、固定版本 DeepSeek Harness 和 `prts-terrarchive`，用户完整解
 1. 从 Releases 下载 Windows ZIP 及对应 `.sha256`。
 2. 校验 SHA-256 后完整解压。
 3. 双击 `PRTS Terrarchive.exe`。
-4. 在设置中配置模型；进入“插件 → PRTS 语料”下载资料。
+4. 在设置中配置模型；进入“插件 → PRTS 语料”确认内置资料已就绪或下载更新。
 5. 新建会话，选择“PRTS 模式”。
 
 关闭主窗口只会缩到系统托盘；通过托盘菜单的“退出”可停止 Host 并彻底退出。不要公开分享
@@ -43,6 +43,7 @@ PRTS-Terrarchive-Portable-windows-x64/
 │  ├─ node/
 │  └─ dsh/
 ├─ app/
+├─ corpus/releases/         # 构建时从 ModelScope 下载并校验的固定语料
 ├─ templates/
 │  ├─ profiles/web/
 │  └─ .agent-presets/prts/
@@ -53,7 +54,7 @@ PRTS-Terrarchive-Portable-windows-x64/
 ```
 
 启动时只同步发行版负责管理的 `prts-terrarchive` 包和 `prts` preset。已有的第三方 profile
-dependency、bundle 和 `cordis.patch.yml` 会保留，语料与会话目录不会被覆盖。
+dependency、bundle 和 `cordis.patch.yml` 会保留，用户会话目录不会被覆盖。
 
 ## 本地构建与发布
 
@@ -76,11 +77,15 @@ cd D:\ds\prts-terrarchive-portable
 .\build-local.ps1
 ```
 
-脚本使用 [`versions.json`](versions.json) 固定 DSH、Node、pnpm 和桌面 SDK 版本；首次运行会
-获取固定 commit 的 DSH，随后安装并构建官方源码、生成生产运行闭包、发布单文件桌面 EXE、
+脚本使用 [`versions.json`](versions.json) 固定 DSH、Node、pnpm、桌面 SDK 及语料的
+release/data_version；首次运行会从 ModelScope 下载并逐文件校验语料、获取固定 commit 的 DSH，
+随后安装并构建官方源码、生成生产运行闭包、发布单文件桌面 EXE、
 复制插件 npm `files` 白名单、执行 Windows PE 静态审计和真实 Host 冒烟测试，最后原子替换
 ZIP 并生成 SHA-256。脚本不写死盘符或代理，也不会把 `userdata/`、`.build/` 或开发文档放进
 发行 ZIP。
+
+已校验的语料缓存在 `.build/corpus/releases`，重复构建不会重新下载；固定版本或文件校验失败时
+构建会直接停止，不会产出一个悄悄缺少资料的 ZIP。
 
 已有可用的 DSH 构建时，可以跳过耗时的官方源码重编：
 
@@ -120,5 +125,11 @@ x64 文件头，防止错误平台运行时混入发行包。
 `prts-terrarchive` 的许可证和第三方声明。
 
 《明日方舟》《明日方舟：终末地》的名称、图像、模型、贴图及其他游戏内容不属于 MIT
-授权范围。本发行版不捆绑 ModelScope 语料；随包提供的地图、皮肤模型和贴图继续遵循
+授权范围。本发行版捆绑构建时从 ModelScope 校验下载的语料；随包提供的地图、皮肤模型和贴图继续遵循
 `prts-terrarchive/GAME_ASSETS.md` 的独立边界声明。
+
+内置语料来自 ModelScope 的
+[`prts-agent-corpus-arknights-gamedata`](https://modelscope.cn/datasets/HTiantian/prts-agent-corpus-arknights-gamedata)
+与 [`prts-agent-corpus-selfbuilt`](https://modelscope.cn/datasets/HTiantian/prts-agent-corpus-selfbuilt)。
+它们不属于本仓库 MIT 授权范围，仍适用各数据集页面的来源声明与条款；发行 ZIP 内的
+`LICENSES/NOTICE.txt` 会同时保留这一边界。

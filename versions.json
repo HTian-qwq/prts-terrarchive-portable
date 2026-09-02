@@ -17,6 +17,11 @@
   },
   "plugin": {
     "repository": "HTian-qwq/prts-terrarchive",
-    "ref": "65e34916eb187b54fb49de04be5e3cfd522fbe4a"
+    "ref": "937f01cb248b179d5cc73ad64c08b26b87d22d5c"
+  },
+  "corpus": {
+    "source": "modelscope",
+    "releaseId": "agent-corpus-v1-20260826-timeline-v1",
+    "dataVersion": "f1507664c8c04262dde7702e20413898dcf89ab308487df9cd2c7c3d03c835e3"
   }
 }

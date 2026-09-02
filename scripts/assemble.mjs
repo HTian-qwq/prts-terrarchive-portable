@@ -26,7 +26,8 @@ function parseArgs(argv) {
     if (!key?.startsWith('--') || !value) throw new Error(`无效参数：${key ?? ''}`)
     result[key.slice(2)] = resolve(value)
   }
-  for (const required of ['dsh-deploy', 'dsh-source', 'plugin', 'node-dir', 'desktop-exe', 'out']) {
+  for (const required of ['dsh-deploy', 'dsh-source', 'plugin', 'corpus-releases',
+    'node-dir', 'desktop-exe', 'out']) {
     if (!result[required]) throw new Error(`缺少 --${required}`)
   }
   return result
@@ -115,6 +116,11 @@ cpSync(args['node-dir'], join(args.out, 'runtime', 'node'), {
   recursive: true,
   dereference: true,
 })
+mkdirSync(join(args.out, 'corpus'), { recursive: true })
+cpSync(args['corpus-releases'], join(args.out, 'corpus', 'releases'), {
+  recursive: true,
+  dereference: true,
+})
 mkdirSync(join(args.out, 'app'), { recursive: true })
 for (const file of ['portable.mjs', 'launcher.mjs']) {
   cpSync(join(repositoryRoot, 'src', file), join(args.out, 'app', file))
@@ -182,6 +188,11 @@ for (const file of ['LICENSE', 'THIRD_PARTY_NOTICES.md', 'GAME_ASSETS.md']) {
 writeFileSync(join(licensesDir, 'NOTICE.txt'), [
   'PRTS Terrarchive Portable is an independent community distribution.',
   'DeepSeek Harness and prts-terrarchive remain governed by their respective notices.',
+  'The bundled corpus was fetched from the pinned ModelScope datasets at build time.',
+  'Corpus data is not licensed under this distribution\'s MIT License and remains subject',
+  'to the source declarations and terms on the corresponding ModelScope dataset pages:',
+  'https://modelscope.cn/datasets/HTiantian/prts-agent-corpus-arknights-gamedata',
+  'https://modelscope.cn/datasets/HTiantian/prts-agent-corpus-selfbuilt',
   'Arknights and Endfield names, images, models, textures, and other game materials are',
   'not licensed under MIT. See prts-terrarchive-GAME_ASSETS.md for the exact boundary.',
   '',
@@ -199,7 +210,11 @@ writeFileSync(join(args.out, 'release-manifest.json'), `${JSON.stringify({
   pluginVersion: pluginManifest.version,
   pluginCommit,
   pluginDirty,
-  features: ['prts-agent-live-retrieval-scene', 'readable-title-pagination'],
+  corpusSource: versions.corpus.source,
+  corpusReleaseId: versions.corpus.releaseId,
+  corpusDataVersion: versions.corpus.dataVersion,
+  features: ['prts-agent-live-retrieval-scene', 'readable-title-pagination',
+    'bundled-modelscope-corpus'],
   platform: 'win32-x64',
 }, null, 2)}\n`)
 

@@ -3,10 +3,10 @@ PRTS Terrarchive Portable（社区非官方便携发行版）
 1. 完整解压 ZIP，不要直接在压缩软件中运行。
 2. 双击“PRTS Terrarchive.exe”，无需安装 Node.js、pnpm 或 .NET。
 3. 主窗口打开后，在设置中配置模型。
-4. 设置 → 插件 → PRTS 语料，选择皮肤并从 ModelScope 下载资料。
+4. 发行包已自带构建时从 ModelScope 校验下载的语料；设置 → 插件 → PRTS 语料可检查状态、更新资料和选择皮肤。
 5. 新建会话并选择“PRTS 模式”。
 
-用户会话、配置、凭据和语料保存在 userdata 目录。请勿把整个 userdata 目录公开分享。
+用户会话、配置和凭据保存在 userdata 目录；随包语料位于 corpus 目录。请勿公开分享 userdata。
 本程序只监听 127.0.0.1，不会默认向局域网开放。
 
 关闭主窗口后程序会缩到系统托盘。双击托盘图标可显示窗口；右键菜单可显示窗口、

@@ -140,6 +140,7 @@ async function start() {
       ...process.env,
       DSH_HOME: dataRoot,
       PRTS_PORTABLE: '1',
+      PRTS_CORPUS_RELEASES_DIR: join(appRoot, 'corpus', 'releases'),
     },
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: process.platform === 'win32',

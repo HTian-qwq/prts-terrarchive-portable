@@ -11,6 +11,7 @@ $BuildRoot = Join-Path $RepositoryRoot '.build'
 $DshSource = Join-Path $BuildRoot 'dsh'
 $DshDeploy = Join-Path $BuildRoot 'dsh-deploy'
 $DesktopPublish = Join-Path $BuildRoot 'desktop'
+$CorpusReleases = Join-Path (Join-Path $BuildRoot 'corpus') 'releases'
 $NodeDirectory = Join-Path $ToolsRoot 'node'
 $Node = Join-Path $NodeDirectory 'node.exe'
 $Corepack = Join-Path $NodeDirectory 'corepack.cmd'
@@ -73,6 +74,13 @@ if ($LASTEXITCODE -ne 0 -or $DshCommit -ne ([string]$Versions.dsh.commit)) {
 }
 
 Invoke-Checked -Command $Corepack -ArgumentList @('prepare', "pnpm@$($Versions.pnpm)", '--activate')
+Write-Host 'Downloading and verifying the pinned corpus from ModelScope...' -ForegroundColor Cyan
+Invoke-Checked -Command $Node -ArgumentList @(
+    (Join-Path $RepositoryRoot 'scripts\fetch-modelscope-corpus.mjs'),
+    '--plugin', (Resolve-Path $PluginPath).Path,
+    '--out', $CorpusReleases,
+    '--release', ([string]$Versions.corpus.releaseId),
+    '--data-version', ([string]$Versions.corpus.dataVersion))
 Invoke-Checked -Command $Node -ArgumentList @(
     (Join-Path $RepositoryRoot 'scripts\patch-dsh-cjk-markdown.mjs'), $DshSource)
 if (-not $SkipDshBuild) {
@@ -127,6 +135,7 @@ Invoke-Checked -Command $Node -ArgumentList @(
     '--dsh-deploy', $DshDeploy,
     '--dsh-source', $DshSource,
     '--plugin', (Resolve-Path $PluginPath).Path,
+    '--corpus-releases', $CorpusReleases,
     '--node-dir', $NodeDirectory,
     '--desktop-exe', $DesktopExe,
     '--out', $StagingDirectory)

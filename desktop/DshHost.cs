@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 
 namespace PrtsTerrarchive.Desktop;
@@ -12,9 +13,11 @@ internal sealed partial class DshHost : IAsyncDisposable
     private Process? process;
     private NativeJob? job;
     private bool requestedStop;
+    private bool corpusWarningShown;
 
     public event Action<Uri>? Ready;
     public event Action<string>? StatusChanged;
+    public event Action<string>? Warning;
 
     public DshHost(string appRoot, DiagnosticLog log)
     {
@@ -34,6 +37,7 @@ internal sealed partial class DshHost : IAsyncDisposable
             job?.Dispose();
             job = null;
             AssertPortableDirectoryWritable();
+            WarnIfCorpusUnavailable();
 
             var nodePath = Path.Combine(appRoot, "runtime", "node", "node.exe");
             var launcherPath = Path.Combine(appRoot, "app", "launcher.mjs");
@@ -160,6 +164,45 @@ internal sealed partial class DshHost : IAsyncDisposable
         {
             try { File.Delete(probe); } catch (IOException) { } catch (UnauthorizedAccessException) { }
         }
+    }
+
+    private void WarnIfCorpusUnavailable()
+    {
+        if (corpusWarningShown) return;
+        var releases = Path.Combine(appRoot, "corpus", "releases");
+        var pointerPath = Path.Combine(releases, "current.json");
+        string? message = null;
+        try
+        {
+            using var pointer = JsonDocument.Parse(File.ReadAllText(pointerPath));
+            var releaseId = pointer.RootElement.GetProperty("release_id").GetString();
+            var dataVersion = pointer.RootElement.GetProperty("data_version").GetString();
+            var manifestPath = string.IsNullOrWhiteSpace(releaseId)
+                ? string.Empty : Path.Combine(releases, releaseId, "release-manifest.json");
+            if (string.IsNullOrWhiteSpace(manifestPath) || !File.Exists(manifestPath))
+            {
+                message = "内置语料配置不完整。";
+            }
+            else
+            {
+                using var manifest = JsonDocument.Parse(File.ReadAllText(manifestPath));
+                var manifestReleaseId = manifest.RootElement.GetProperty("release_id").GetString();
+                var manifestDataVersion = manifest.RootElement.GetProperty("data_version").GetString();
+                if (manifestReleaseId != releaseId || manifestDataVersion != dataVersion
+                    || string.IsNullOrWhiteSpace(dataVersion) || dataVersion.Length != 64)
+                {
+                    message = "内置语料版本配置不一致。";
+                }
+            }
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException
+            or JsonException or KeyNotFoundException)
+        {
+            message = "没有检测到可用的内置语料。";
+        }
+        if (message is null) return;
+        corpusWarningShown = true;
+        Warning?.Invoke($"{message}\n\n请确认发行包已完整解压且 corpus 目录仍在；程序启动后也可以前往“设置 → 插件 → PRTS 语料”重新下载或检查配置。");
     }
 
     private void ConsumeOutput(string? line, bool isError)
