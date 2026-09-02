@@ -73,6 +73,8 @@ if ($LASTEXITCODE -ne 0 -or $DshCommit -ne ([string]$Versions.dsh.commit)) {
 }
 
 Invoke-Checked -Command $Corepack -ArgumentList @('prepare', "pnpm@$($Versions.pnpm)", '--activate')
+Invoke-Checked -Command $Node -ArgumentList @(
+    (Join-Path $RepositoryRoot 'scripts\patch-dsh-cjk-markdown.mjs'), $DshSource)
 if (-not $SkipDshBuild) {
     Write-Host 'Installing and building official DSH...' -ForegroundColor Cyan
     Push-Location $DshSource
@@ -80,6 +82,9 @@ if (-not $SkipDshBuild) {
         Invoke-Checked -Command $Corepack -ArgumentList @('pnpm', 'install', '--frozen-lockfile')
         Invoke-Checked -Command $Corepack -ArgumentList @('pnpm', 'run', 'build:official')
     } finally { Pop-Location }
+} else {
+    Invoke-Checked -Command $Node -ArgumentList @(
+        (Join-Path $RepositoryRoot 'scripts\patch-dsh-cjk-markdown.mjs'), $DshSource, '--check-built')
 }
 
 Write-Host 'Creating the production runtime closure...' -ForegroundColor Cyan

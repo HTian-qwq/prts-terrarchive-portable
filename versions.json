@@ -10,10 +10,13 @@
   "dsh": {
     "tag": "dsh-v0.1.2-alpha.1",
     "commit": "cd5ef8148158c3a752a658978873241fdf8e2bbc",
-    "version": "0.1.2-alpha.1"
+    "version": "0.1.2-alpha.1",
+    "compatibilityPatches": [
+      "cjk-quoted-strong-emphasis"
+    ]
   },
   "plugin": {
     "repository": "HTian-qwq/prts-terrarchive",
-    "ref": "33620153baa92fc163960eb1b9febd6b57291395"
+    "ref": "cf680c56be68e13798532dc85d2e588b74431a83"
   }
 }

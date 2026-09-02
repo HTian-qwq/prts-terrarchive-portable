@@ -195,6 +195,7 @@ writeFileSync(join(args.out, 'release-manifest.json'), `${JSON.stringify({
   pnpmVersion: versions.pnpm,
   dshVersion: dshManifest.version,
   dshCommit: actualCommit,
+  dshCompatibilityPatches: versions.dsh.compatibilityPatches ?? [],
   pluginVersion: pluginManifest.version,
   pluginCommit,
   pluginDirty,

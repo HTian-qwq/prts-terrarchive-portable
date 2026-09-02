@@ -162,9 +162,23 @@ internal sealed class MainWindow : Form
                 style.id = 'prts-desktop-chrome-style';
                 style.textContent = `
                   #prts-desktop-drag {
-                    position: fixed; z-index: 2147483646; inset: 0 128px auto 0; height: 8px;
-                    cursor: default; user-select: none; -webkit-user-select: none;
+                    position: fixed; z-index: 2147483646; inset: 0 128px auto 0; height: 38px;
+                    cursor: grab; user-select: none; -webkit-user-select: none;
                   }
+                  #prts-desktop-drag:active { cursor: grabbing; }
+                  .prts-desktop-resize {
+                    position: fixed; z-index: 2147483647; display: block;
+                    background: transparent; touch-action: none; user-select: none;
+                    -webkit-user-select: none;
+                  }
+                  .prts-desktop-resize[data-edge='n'] { inset: 0 8px auto; height: 7px; cursor: n-resize; }
+                  .prts-desktop-resize[data-edge='s'] { inset: auto 8px 0; height: 7px; cursor: s-resize; }
+                  .prts-desktop-resize[data-edge='w'] { inset: 8px auto 8px 0; width: 7px; cursor: w-resize; }
+                  .prts-desktop-resize[data-edge='e'] { inset: 8px 0 8px auto; width: 7px; cursor: e-resize; }
+                  .prts-desktop-resize[data-edge='nw'] { inset: 0 auto auto 0; width: 11px; height: 11px; cursor: nw-resize; }
+                  .prts-desktop-resize[data-edge='ne'] { inset: 0 0 auto auto; width: 11px; height: 11px; cursor: ne-resize; }
+                  .prts-desktop-resize[data-edge='sw'] { inset: auto auto 0 0; width: 11px; height: 11px; cursor: sw-resize; }
+                  .prts-desktop-resize[data-edge='se'] { inset: auto 0 0 auto; width: 11px; height: 11px; cursor: se-resize; }
                   #prts-desktop-chrome {
                     --shell-fg: rgba(22, 25, 29, .78);
                     --shell-bg: rgba(250, 250, 248, .76);
@@ -247,8 +261,21 @@ internal sealed class MainWindow : Form
                   button.addEventListener('click', event => { event.stopPropagation(); post(action); });
                   chrome.appendChild(button);
                 }
+                const resizeHandles = ['n', 's', 'w', 'e', 'nw', 'ne', 'sw', 'se'].map(edge => {
+                  const handle = document.createElement('span');
+                  handle.className = 'prts-desktop-resize';
+                  handle.dataset.edge = edge;
+                  handle.setAttribute('aria-hidden', 'true');
+                  handle.addEventListener('pointerdown', event => {
+                    if (event.button !== 0) return;
+                    event.preventDefault();
+                    event.stopPropagation();
+                    post('resize:' + edge);
+                  });
+                  return handle;
+                });
                 (document.head || document.documentElement).appendChild(style);
-                document.body.append(drag, chrome);
+                document.body.append(drag, chrome, ...resizeHandles);
               };
               if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', install, { once: true });
               else install();
@@ -641,6 +668,27 @@ internal sealed class MainWindow : Form
 
     private void HandleShellAction(string action)
     {
+        if (action.StartsWith("resize:", StringComparison.Ordinal))
+        {
+            var hitTest = action["resize:".Length..] switch
+            {
+                "n" => HtTop,
+                "s" => HtBottom,
+                "w" => HtLeft,
+                "e" => HtRight,
+                "nw" => HtTopLeft,
+                "ne" => HtTopRight,
+                "sw" => HtBottomLeft,
+                "se" => HtBottomRight,
+                _ => HtClient,
+            };
+            if (hitTest != HtClient && WindowState == FormWindowState.Normal)
+            {
+                ReleaseCapture();
+                SendMessage(Handle, WmNcLButtonDown, hitTest, 0);
+            }
+            return;
+        }
         switch (action)
         {
             case "minimize":

@@ -20,6 +20,7 @@ import {
   syncManagedInstall,
 } from '../src/portable.mjs'
 import { assertWindowsX64Executable } from '../scripts/windows-pe.mjs'
+import { patchDshCjkMarkdown } from '../scripts/patch-dsh-cjk-markdown.mjs'
 
 test('解析 alpha.1 Host 启动 URL，并在日志中隐藏 token', () => {
   const line = 'Open http://127.0.0.1:43189/?token=Abc_123-xyz now'
@@ -123,5 +124,60 @@ test('接受 Windows x64 PE 文件头', () => {
     assert.doesNotThrow(() => assertWindowsX64Executable(executable, 'Node.js'))
   } finally {
     rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+test('无边框桌面外壳提供可拖动标题区与八方向缩放', () => {
+  const source = readFileSync(join(import.meta.dirname, '..', 'desktop', 'MainWindow.cs'), 'utf8')
+  assert.match(source, /#prts-desktop-drag[^]*height: 38px/u)
+  assert.match(source, /\['n', 's', 'w', 'e', 'nw', 'ne', 'sw', 'se'\]/u)
+  assert.match(source, /post\('resize:' \+ edge\)/u)
+  assert.match(source, /action\.StartsWith\("resize:"/u)
+  for (const hitTest of ['HtTop', 'HtBottom', 'HtLeft', 'HtRight',
+    'HtTopLeft', 'HtTopRight', 'HtBottomLeft', 'HtBottomRight']) {
+    assert.ok(source.includes(`=> ${hitTest}`), `缺少 ${hitTest} 缩放映射`)
+  }
+})
+
+test('DSH Markdown 补丁支持中文两侧的引号加粗并校验构建结果', () => {
+  const root = mkdtempSync(join(tmpdir(), 'prts-dsh-markdown-'))
+  const parserDir = join(root, 'packages', 'client', 'ui-primitives', 'src', 'markdown')
+  const testDir = join(root, 'packages', 'client', 'ui-primitives', 'tests')
+  const libDir = join(root, 'packages', 'client', 'ui-primitives', 'lib')
+  const webAssetsDir = join(root, 'apps', 'web', 'dist', 'assets')
+  mkdirSync(parserDir, { recursive: true })
+  mkdirSync(testDir, { recursive: true })
+  mkdirSync(libDir, { recursive: true })
+  mkdirSync(webAssetsDir, { recursive: true })
+  writeFileSync(join(parserDir, 'cjkFriendlyStrong.ts'), `
+    const after = classifyCharacter(code)
+    const open = !after || (after === constants.characterGroupPunctuation && Boolean(before))
+      || attentionMarkers.includes(code)
+    const commonMarkClose = !before
+      || (before === constants.characterGroupPunctuation && Boolean(after))
+      || attentionMarkers.includes(previous)
+    const markerCount = token.end.offset - token.start.offset
+    const cjkStrongClose = markerCount >= 2
+    name: 'cjkFriendlyAttention'
+`)
+  writeFileSync(join(testDir, 'markdown.client.spec.tsx'), `
+      ['**Warning!**继续', 'Warning!'],
+`)
+  writeFileSync(join(libDir, 'index.js'), '// stale build\n')
+  try {
+    patchDshCjkMarkdown(root)
+    const parser = readFileSync(join(parserDir, 'cjkFriendlyStrong.ts'), 'utf8')
+    assert.match(parser, /const cjkStrongOpen = markerCount >= 2/u)
+    assert.match(parser, /isCjkCharacter\(previous\)[^]*unicodePunctuation\(code\)/u)
+    assert.ok(parser.includes(`name: 'cjkFriendlyQuotedStrong'`))
+    const cases = readFileSync(join(testDir, 'markdown.client.spec.tsx'), 'utf8')
+    assert.ok(cases.includes('段落**“引文”**继续'))
+    assert.throws(() => patchDshCjkMarkdown(root, { checkBuilt: true }),
+      /现有 DSH 构建不含 CJK 引号加粗修复/u)
+    writeFileSync(join(libDir, 'index.js'), 'const name = "cjkFriendlyQuotedStrong"\n')
+    writeFileSync(join(webAssetsDir, 'index-fixture.js'), '"cjkFriendlyQuotedStrong"\n')
+    assert.doesNotThrow(() => patchDshCjkMarkdown(root, { checkBuilt: true }))
+  } finally {
+    rmSync(root, { recursive: true, force: true })
   }
 })

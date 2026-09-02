@@ -55,6 +55,17 @@ if (!existsSync(gameAssetNotice) || !readFileSync(gameAssetNotice, 'utf8').inclu
 if (!manifest.features?.includes('prts-agent-live-retrieval-scene')) {
   throw new Error('发行清单没有声明 PRTS Agent 动态检索场景能力。')
 }
+if (!manifest.dshCompatibilityPatches?.includes('cjk-quoted-strong-emphasis')) {
+  throw new Error('发行清单没有声明 DSH CJK Markdown 兼容补丁。')
+}
+const webAssets = join(artifact, 'runtime', 'dsh', 'node_modules',
+  '@deepseek-ai', 'dsh-web-frontend', 'dist', 'assets')
+const hasMarkdownPatch = existsSync(webAssets) && readdirSync(webAssets)
+  .filter((name) => name.endsWith('.js'))
+  .some((name) => readFileSync(join(webAssets, name), 'utf8').includes('cjkFriendlyQuotedStrong'))
+if (!hasMarkdownPatch) {
+  throw new Error('发行包中的 DSH Markdown 运行时缺少 CJK 引号加粗修复。')
+}
 const pluginClient = readFileSync(join(
   artifact, 'templates', 'profiles', 'web', 'node_modules', 'prts-terrarchive', 'lib', 'client.js'), 'utf8')
 for (const signature of [
