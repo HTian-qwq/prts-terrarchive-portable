@@ -199,7 +199,7 @@ writeFileSync(join(args.out, 'release-manifest.json'), `${JSON.stringify({
   pluginVersion: pluginManifest.version,
   pluginCommit,
   pluginDirty,
-  features: ['prts-agent-live-retrieval-scene'],
+  features: ['prts-agent-live-retrieval-scene', 'readable-title-pagination'],
   platform: 'win32-x64',
 }, null, 2)}\n`)
 

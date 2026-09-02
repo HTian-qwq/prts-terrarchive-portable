@@ -55,6 +55,9 @@ if (!existsSync(gameAssetNotice) || !readFileSync(gameAssetNotice, 'utf8').inclu
 if (!manifest.features?.includes('prts-agent-live-retrieval-scene')) {
   throw new Error('发行清单没有声明 PRTS Agent 动态检索场景能力。')
 }
+if (!manifest.features?.includes('readable-title-pagination')) {
+  throw new Error('发行清单没有声明可读标题分页能力。')
+}
 if (!manifest.dshCompatibilityPatches?.includes('cjk-quoted-strong-emphasis')) {
   throw new Error('发行清单没有声明 DSH CJK Markdown 兼容补丁。')
 }
@@ -76,6 +79,20 @@ for (const signature of [
 ]) {
   if (!pluginClient.includes(signature)) {
     throw new Error(`发行包中的 PRTS Agent 动态检索场景不完整：缺少 ${signature}`)
+  }
+}
+const packagedPluginRoot = join(artifact, 'templates', 'profiles', 'web', 'node_modules',
+  'prts-terrarchive')
+const packagedSearch = readFileSync(join(packagedPluginRoot, 'src', 'search.js'), 'utf8')
+const packagedStore = readFileSync(join(packagedPluginRoot, 'src', 'store.js'), 'utf8')
+for (const signature of ['next_after', 'PAGE_ANCHOR_MISMATCH', 'checkpointAfterTitle']) {
+  if (!packagedSearch.includes(signature)) {
+    throw new Error(`发行包中的可读标题分页不完整：缺少 ${signature}`)
+  }
+}
+for (const signature of ['角色活动 Wiki', '大地巡旅', '游戏内原文']) {
+  if (!packagedStore.includes(signature)) {
+    throw new Error(`发行包中的资料标题适配不完整：缺少 ${signature}`)
   }
 }
 
