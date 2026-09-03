@@ -53,6 +53,7 @@ if (!existsSync(gameAssetNotice) || !readFileSync(gameAssetNotice, 'utf8').inclu
 }
 const distributionNotice = readFileSync(join(artifact, 'LICENSES', 'NOTICE.txt'), 'utf8')
 if (!distributionNotice.includes('modelscope.cn/datasets/HTiantian/prts-agent-corpus-arknights-gamedata')
+    || !distributionNotice.includes('modelscope.cn/datasets/HTiantian/prts-agent-corpus-endfield')
     || !distributionNotice.includes('Corpus data is not licensed')) {
   throw new Error('发行包缺少内置 ModelScope 语料的来源与非 MIT 声明。')
 }
@@ -78,8 +79,12 @@ if (corpusPointer.release_id !== manifest.corpusReleaseId
     || corpusManifest.release_id !== manifest.corpusReleaseId
     || corpusPointer.data_version !== manifest.corpusDataVersion
     || corpusManifest.data_version !== manifest.corpusDataVersion
-    || !Number.isInteger(corpusManifest.document_count) || corpusManifest.document_count < 1000) {
-  throw new Error('发行包内语料的 release/data_version/文档数与固定版本不符。')
+    || corpusManifest.document_count !== manifest.corpusDocumentCount) {
+  throw new Error('发行包内语料与固定版本不符：'
+    + ` expected release=${manifest.corpusReleaseId}, data_version=${manifest.corpusDataVersion}, documents=${manifest.corpusDocumentCount};`
+    + ` actual pointer_release=${corpusPointer.release_id ?? 'missing'}, manifest_release=${corpusManifest.release_id ?? 'missing'},`
+    + ` pointer_data_version=${corpusPointer.data_version ?? 'missing'}, manifest_data_version=${corpusManifest.data_version ?? 'missing'},`
+    + ` documents=${corpusManifest.document_count ?? 'missing'}。`)
 }
 const corpusPackIds = new Set((corpusManifest.packs || []).map((pack) => pack.pack_id))
 if (!(corpusManifest.required_packs || []).length

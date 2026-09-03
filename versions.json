@@ -17,11 +17,12 @@
   },
   "plugin": {
     "repository": "HTian-qwq/prts-terrarchive",
-    "ref": "887b7ebd32acc337382c6554225756e24a142702"
+    "ref": "fdbbd0ee871e78e15c69cb1e3e48d6ec5938d77b"
   },
   "corpus": {
     "source": "modelscope",
     "releaseId": "agent-corpus-v2-20260903-xuesong-youmeng-v1",
-    "dataVersion": "77df7c534525256af1dd36b68128cdd878ac2f3bc109636c5051fa85dd3dae09"
+    "dataVersion": "77df7c534525256af1dd36b68128cdd878ac2f3bc109636c5051fa85dd3dae09",
+    "documentCount": 29121
   }
 }
