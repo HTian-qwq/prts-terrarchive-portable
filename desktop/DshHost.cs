@@ -146,6 +146,23 @@ internal sealed partial class DshHost : IAsyncDisposable
         }
     }
 
+    public string MemorySnapshot()
+    {
+        var current = process;
+        if (current is null) return "node=stopped";
+        try
+        {
+            current.Refresh();
+            return $"node(pid={current.Id}, working={ToMiB(current.WorkingSet64)}, private={ToMiB(current.PrivateMemorySize64)})";
+        }
+        catch (Exception error) when (error is InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+            return "node=unavailable";
+        }
+    }
+
+    private static string ToMiB(long bytes) => $"{bytes / 1048576D:F1} MiB";
+
     private void AssertPortableDirectoryWritable()
     {
         Directory.CreateDirectory(dataRoot);

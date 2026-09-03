@@ -139,6 +139,16 @@ test('无边框桌面外壳提供可拖动标题区与八方向缩放', () => {
   }
 })
 
+test('窗口进入后台时暂停地图并挂起 WebView2，且记录分进程内存', () => {
+  const source = readFileSync(join(import.meta.dirname, '..', 'desktop', 'MainWindow.cs'), 'utf8')
+  assert.match(source, /RequestBackgroundMode\(true\);[^]*Hide\(\);/u)
+  assert.match(source, /await core\.TrySuspendAsync\(\)/u)
+  assert.match(source, /if \(core\.IsSuspended\) core\.Resume\(\)/u)
+  assert.match(source, /prts-shell-visibility/u)
+  assert.match(source, /browserEnvironment\.GetProcessInfos\(\)/u)
+  assert.match(source, /Memory\[\{reason\}\]/u)
+})
+
 test('正式构建固定 ModelScope 语料并在缺失时给出桌面提示', () => {
   const root = join(import.meta.dirname, '..')
   const build = readFileSync(join(root, 'build-local.ps1'), 'utf8')

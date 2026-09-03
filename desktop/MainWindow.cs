@@ -23,8 +23,14 @@ internal sealed class MainWindow : Form
     private readonly Button maximizeButton;
     private readonly NotifyIcon trayIcon;
     private readonly ToolStripMenuItem restartMenuItem;
+    private readonly System.Windows.Forms.Timer memoryTimer = new() { Interval = 120_000 };
+    private readonly SemaphoreSlim browserStateGate = new(1, 1);
+    private CoreWebView2Environment? browserEnvironment;
     private bool allowClose;
     private bool started;
+    private bool pageReady;
+    private bool backgroundRequested;
+    private bool backgroundApplied;
     private Uri? hostUri;
 
     public MainWindow(
@@ -99,8 +105,11 @@ internal sealed class MainWindow : Form
             LayoutWindowChrome();
             ApplyWindowShape();
             maximizeButton.Text = WindowState == FormWindowState.Maximized ? "❐" : "□";
+            RequestBackgroundMode(WindowState == FormWindowState.Minimized);
         };
         FormClosing += HandleFormClosing;
+        memoryTimer.Tick += (_, _) => LogMemorySnapshot("periodic");
+        memoryTimer.Start();
         LayoutWindowChrome();
     }
 
@@ -138,8 +147,8 @@ internal sealed class MainWindow : Form
         Directory.CreateDirectory(webViewData);
         try
         {
-            var environment = await CoreWebView2Environment.CreateAsync(null, webViewData);
-            await browser.EnsureCoreWebView2Async(environment);
+            browserEnvironment = await CoreWebView2Environment.CreateAsync(null, webViewData);
+            await browser.EnsureCoreWebView2Async(browserEnvironment);
         }
         catch (WebView2RuntimeNotFoundException error)
         {
@@ -294,7 +303,14 @@ internal sealed class MainWindow : Form
         };
         browser.CoreWebView2.NavigationStarting += (_, args) =>
         {
-            if (IsAllowedLocalUri(args.Uri) || args.Uri == "about:blank") return;
+            if (IsAllowedLocalUri(args.Uri) || args.Uri == "about:blank")
+            {
+                pageReady = false;
+                // Navigate 会自动唤醒一个已挂起的 WebView；让完成事件重新执行
+                // 后台转换，覆盖“窗口隐藏时重启服务”的路径。
+                if (backgroundRequested) backgroundApplied = false;
+                return;
+            }
             args.Cancel = true;
             OpenExternalUri(args.Uri);
         };
@@ -311,10 +327,12 @@ internal sealed class MainWindow : Form
         {
             if (args.IsSuccess)
             {
-                browser.Visible = true;
+                pageReady = true;
+                browser.Visible = !backgroundRequested;
                 loadingOverlay.Visible = false;
                 HideNativeChrome();
                 SetStatus("PRTS Host 已就绪");
+                RequestBackgroundMode(backgroundRequested);
                 return;
             }
 
@@ -326,12 +344,14 @@ internal sealed class MainWindow : Form
             log.Write($"WebView process failed: {args.ProcessFailedKind}");
             ShowLoadingFailure("页面进程意外停止", "可以重试加载，或暂时在系统浏览器中打开。");
         });
+        RequestBackgroundMode(backgroundRequested);
     }
 
     private void NavigateToHost(Uri uri)
     {
         if (browser.CoreWebView2 is null) return;
         hostUri = uri;
+        pageReady = false;
         loadingOverlay.Visible = true;
         loadingOverlay.BringToFront();
         ShowNativeChrome();
@@ -361,6 +381,7 @@ internal sealed class MainWindow : Form
 
     private void ShowLoadingFailure(string title, string detail)
     {
+        pageReady = false;
         browser.Visible = false;
         loadingOverlay.Visible = true;
         loadingOverlay.BringToFront();
@@ -417,6 +438,7 @@ internal sealed class MainWindow : Form
         }
 
         args.Cancel = true;
+        RequestBackgroundMode(true);
         Hide();
     }
 
@@ -430,13 +452,121 @@ internal sealed class MainWindow : Form
     {
         if (!Visible) Show();
         if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal;
+        RequestBackgroundMode(false);
         Activate();
         BringToFront();
     }
 
+    private void RequestBackgroundMode(bool background)
+    {
+        var needsTransition = backgroundRequested != background || backgroundApplied != background;
+        backgroundRequested = background;
+        // TrySuspendAsync 要求 Controller.IsVisible=false；先同步隐藏控件，避免
+        // 快速点关闭时异步状态机尚未开始就被 WebView2 拒绝。
+        if (background) browser.Visible = false;
+        if (!needsTransition) return;
+        _ = ApplyBackgroundModeAsync();
+    }
+
+    private async Task ApplyBackgroundModeAsync()
+    {
+        await browserStateGate.WaitAsync();
+        try
+        {
+            while (backgroundApplied != backgroundRequested)
+            {
+                var background = backgroundRequested;
+                var core = browser.CoreWebView2;
+                if (core is null) return;
+                try
+                {
+                    if (background)
+                    {
+                        await SetPageBackgroundSignalAsync(core, true);
+                        browser.Visible = false;
+                        var suspended = await core.TrySuspendAsync();
+                        log.Write($"WebView background mode entered (suspended={suspended}).");
+                    }
+                    else
+                    {
+                        if (core.IsSuspended) core.Resume();
+                        await SetPageBackgroundSignalAsync(core, false);
+                        browser.Visible = pageReady;
+                        log.Write("WebView background mode exited.");
+                    }
+                }
+                catch (Exception error) when (error is COMException or InvalidOperationException
+                    or ObjectDisposedException)
+                {
+                    // 页面正在导航或窗口正在退出时，脚本/挂起请求可能失效；下一次
+                    // Resize、NavigationCompleted 或托盘恢复会重新同步目标状态。
+                    log.Write($"WebView background transition was deferred: {error.Message}");
+                }
+                backgroundApplied = background;
+                LogMemorySnapshot(background ? "background" : "foreground");
+            }
+        }
+        finally
+        {
+            browserStateGate.Release();
+        }
+    }
+
+    private static Task<string> SetPageBackgroundSignalAsync(CoreWebView2 core, bool background)
+    {
+        var value = background ? "true" : "false";
+        return core.ExecuteScriptAsync($$"""
+            (() => {
+              window.__PRTS_SHELL_BACKGROUND__ = {{value}};
+              window.dispatchEvent(new CustomEvent('prts-shell-visibility', {
+                detail: { background: {{value}} }
+              }));
+            })();
+            """);
+    }
+
+    private void LogMemorySnapshot(string reason)
+    {
+        try
+        {
+            using var desktop = Process.GetCurrentProcess();
+            desktop.Refresh();
+            var parts = new List<string>
+            {
+                $"desktop(pid={desktop.Id}, working={ToMiB(desktop.WorkingSet64)}, private={ToMiB(desktop.PrivateMemorySize64)})",
+                host.MemorySnapshot(),
+            };
+            if (browserEnvironment is not null)
+            {
+                foreach (var info in browserEnvironment.GetProcessInfos())
+                {
+                    try
+                    {
+                        using var process = Process.GetProcessById(info.ProcessId);
+                        process.Refresh();
+                        parts.Add($"webview-{info.Kind}(pid={info.ProcessId}, working={ToMiB(process.WorkingSet64)}, private={ToMiB(process.PrivateMemorySize64)})");
+                    }
+                    catch (Exception error) when (error is ArgumentException or InvalidOperationException
+                        or System.ComponentModel.Win32Exception)
+                    {
+                        // 进程快照与 Process.GetProcessById 之间退出是正常竞态。
+                    }
+                }
+            }
+            log.Write($"Memory[{reason}]: {string.Join(", ", parts)}");
+        }
+        catch (Exception error)
+        {
+            log.Write($"Memory snapshot failed: {error.Message}");
+        }
+    }
+
+    private static string ToMiB(long bytes) => $"{bytes / 1048576D:F1} MiB";
+
     public async Task ShutdownAsync()
     {
         restartMenuItem.Enabled = false;
+        memoryTimer.Stop();
         await host.DisposeAsync();
         allowClose = true;
         trayIcon.Visible = false;
@@ -447,6 +577,7 @@ internal sealed class MainWindow : Form
     {
         if (disposing)
         {
+            memoryTimer.Dispose();
             trayIcon.Dispose();
             browser.Dispose();
         }
