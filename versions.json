@@ -17,11 +17,11 @@
   },
   "plugin": {
     "repository": "HTian-qwq/prts-terrarchive",
-    "ref": "937f01cb248b179d5cc73ad64c08b26b87d22d5c"
+    "ref": "887b7ebd32acc337382c6554225756e24a142702"
   },
   "corpus": {
     "source": "modelscope",
-    "releaseId": "agent-corpus-v1-20260826-timeline-v1",
-    "dataVersion": "f1507664c8c04262dde7702e20413898dcf89ab308487df9cd2c7c3d03c835e3"
+    "releaseId": "agent-corpus-v2-20260903-xuesong-youmeng-v1",
+    "dataVersion": "77df7c534525256af1dd36b68128cdd878ac2f3bc109636c5051fa85dd3dae09"
   }
 }
