@@ -13,7 +13,7 @@
   },
   "plugin": {
     "repository": "HTian-qwq/prts-terrarchive",
-    "ref": "d5e6e4fda0440e828850ebf2f05ed66d6eab6440"
+    "ref": "e060227a03f612d66e8c35a2d102c6e3113fffb0"
   },
   "corpus": {
     "source": "modelscope",
