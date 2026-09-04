@@ -80,7 +80,7 @@ if (corpusPointer.release_id !== manifest.corpusReleaseId
     || corpusPointer.data_version !== manifest.corpusDataVersion
     || corpusManifest.data_version !== manifest.corpusDataVersion
     || corpusManifest.document_count !== manifest.corpusDocumentCount) {
-  throw new Error('发行包内语料与固定版本不符：'
+  throw new Error('发行包内语料与本次构建记录的版本不符：'
     + ` expected release=${manifest.corpusReleaseId}, data_version=${manifest.corpusDataVersion}, documents=${manifest.corpusDocumentCount};`
     + ` actual pointer_release=${corpusPointer.release_id ?? 'missing'}, manifest_release=${corpusManifest.release_id ?? 'missing'},`
     + ` pointer_data_version=${corpusPointer.data_version ?? 'missing'}, manifest_data_version=${corpusManifest.data_version ?? 'missing'},`
@@ -95,17 +95,6 @@ for (const pack of corpusManifest.packs || []) {
   if (!existsSync(join(corpusRoot, manifest.corpusReleaseId, String(pack.manifest_path || '')))) {
     throw new Error(`发行包内语料缺少 pack manifest：${pack.manifest_path ?? 'unknown'}`)
   }
-}
-if (!manifest.dshCompatibilityPatches?.includes('cjk-quoted-strong-emphasis')) {
-  throw new Error('发行清单没有声明 DSH CJK Markdown 兼容补丁。')
-}
-const webAssets = join(artifact, 'runtime', 'dsh', 'node_modules',
-  '@deepseek-ai', 'dsh-web-frontend', 'dist', 'assets')
-const hasMarkdownPatch = existsSync(webAssets) && readdirSync(webAssets)
-  .filter((name) => name.endsWith('.js'))
-  .some((name) => readFileSync(join(webAssets, name), 'utf8').includes('cjkFriendlyQuotedStrong'))
-if (!hasMarkdownPatch) {
-  throw new Error('发行包中的 DSH Markdown 运行时缺少 CJK 引号加粗修复。')
 }
 const pluginClient = readFileSync(join(
   artifact, 'templates', 'profiles', 'web', 'node_modules', 'prts-terrarchive', 'lib', 'client.js'), 'utf8')

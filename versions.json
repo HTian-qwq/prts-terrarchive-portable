@@ -9,9 +9,7 @@
   },
   "dsh": {
     "tag": "dsh-v0.1.2-alpha.1",
-    "commit": "cd5ef8148158c3a752a658978873241fdf8e2bbc",
-    "version": "0.1.2-alpha.1",
-    "compatibilityPatches": []
+    "version": "0.1.2-alpha.1"
   },
   "plugin": {
     "repository": "HTian-qwq/prts-terrarchive",
@@ -19,8 +17,6 @@
   },
   "corpus": {
     "source": "modelscope",
-    "releaseId": "agent-corpus-v2-20260904-retraveler-alias-fix-v1",
-    "dataVersion": "c90575fc10142d1d444644d92df07aff8453bc091781c2f6d7c67899ad2cde8b",
-    "documentCount": 28661
+    "track": "latest"
   }
 }

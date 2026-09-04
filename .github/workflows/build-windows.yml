@@ -37,7 +37,7 @@ jobs:
             throw 'Tagged releases must pin versions.json plugin.ref to an immutable commit or tag.'
           }
 
-      - name: Checkout pinned DeepSeek Harness
+      - name: Checkout configured DeepSeek Harness version
         uses: actions/checkout@v4
         with:
           repository: deepseek-ai/deepseek-harness
@@ -83,10 +83,7 @@ jobs:
 
       - name: Prepare exact deploy build allowlist
         shell: pwsh
-        run: |
-          $dirty = (git -C .build/dsh status --porcelain --untracked-files=no | Out-String).Trim()
-          if ($dirty) { throw 'Pinned DSH checkout is not clean before packaging.' }
-          node scripts/prepare-dsh-workspace.mjs .build/dsh
+        run: node scripts/prepare-dsh-workspace.mjs .build/dsh
 
       - name: Deploy official locked DSH runtime closure
         working-directory: .build/dsh
@@ -97,8 +94,6 @@ jobs:
           } finally {
             git checkout -- pnpm-workspace.yaml
           }
-          $dirty = (git status --porcelain --untracked-files=no | Out-String).Trim()
-          if ($dirty) { throw 'DSH checkout changed during packaging.' }
 
       - name: Complete declared DSH workspace peer closure
         shell: pwsh

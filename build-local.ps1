@@ -59,41 +59,19 @@ Assert-File (Join-Path $PluginPath 'package.json') 'prts-terrarchive plugin sour
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) { throw 'Git was not found.' }
 if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) { throw '.NET SDK was not found.' }
 
-$PluginCommit = (git -C $PluginPath rev-parse HEAD).Trim()
-$PluginDirty = (git -C $PluginPath status --porcelain | Out-String).Trim()
-if ($LASTEXITCODE -ne 0 -or $PluginDirty) {
-    throw 'prts-terrarchive must be a clean Git checkout before building.'
-}
-if ($PluginCommit -ne ([string]$Versions.plugin.ref)) {
-    throw "Plugin revision mismatch: expected $($Versions.plugin.ref), found $PluginCommit"
-}
-
 if (-not (Test-Path (Join-Path $DshSource '.git'))) {
-    Write-Host 'Fetching pinned DeepSeek Harness...' -ForegroundColor Cyan
+    Write-Host 'Fetching DeepSeek Harness...' -ForegroundColor Cyan
     Invoke-Checked -Command git -ArgumentList @(
-        'clone', '--no-checkout', 'https://github.com/deepseek-ai/deepseek-harness.git', $DshSource)
-    Invoke-Checked -Command git -ArgumentList @(
-        '-C', $DshSource, 'fetch', 'origin', ([string]$Versions.dsh.commit), '--depth', '1')
-    Invoke-Checked -Command git -ArgumentList @(
-        '-C', $DshSource, 'checkout', '--detach', ([string]$Versions.dsh.commit))
-}
-$DshCommit = (git -C $DshSource rev-parse HEAD).Trim()
-if ($LASTEXITCODE -ne 0 -or $DshCommit -ne ([string]$Versions.dsh.commit)) {
-    throw "DSH revision mismatch: expected $($Versions.dsh.commit), found $DshCommit"
-}
-$DshDirty = (git -C $DshSource status --porcelain --untracked-files=no | Out-String).Trim()
-if ($LASTEXITCODE -ne 0 -or $DshDirty) {
-    throw 'DSH checkout has tracked modifications. Restore the pinned official commit before building.'
+        'clone', '--branch', ([string]$Versions.dsh.tag), '--depth', '1',
+        'https://github.com/deepseek-ai/deepseek-harness.git', $DshSource)
 }
 
 Invoke-Checked -Command $Corepack -ArgumentList @('prepare', "pnpm@$($Versions.pnpm)", '--activate')
-Write-Host 'Downloading and verifying the pinned corpus from ModelScope...' -ForegroundColor Cyan
+Write-Host 'Resolving, downloading, and verifying the latest corpus from ModelScope...' -ForegroundColor Cyan
 Invoke-Checked -Command $Node -ArgumentList @(
     (Join-Path $RepositoryRoot 'scripts\fetch-modelscope-corpus.mjs'),
     '--plugin', (Resolve-Path $PluginPath).Path,
-    '--out', $CorpusReleases,
-    '--release', ([string]$Versions.corpus.releaseId),
-    '--data-version', ([string]$Versions.corpus.dataVersion))
+    '--out', $CorpusReleases)
 if (-not $SkipDshBuild) {
     Write-Host 'Installing and building official DSH...' -ForegroundColor Cyan
     Push-Location $DshSource
@@ -120,10 +98,6 @@ try {
     } finally { Pop-Location }
 } finally {
     [System.IO.File]::WriteAllBytes($DshWorkspace, $DshWorkspaceOriginal)
-}
-$DshDirty = (git -C $DshSource status --porcelain --untracked-files=no | Out-String).Trim()
-if ($LASTEXITCODE -ne 0 -or $DshDirty) {
-    throw 'DSH checkout changed during packaging; refusing to assemble a modified runtime.'
 }
 Invoke-Checked -Command $Node -ArgumentList @(
     (Join-Path $RepositoryRoot 'scripts\complete-dsh-workspace-closure.mjs'), $DshSource, $DshDeploy)

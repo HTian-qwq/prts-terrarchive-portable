@@ -16,7 +16,7 @@ Node.js、固定版本 DeepSeek Harness 和 `prts-terrarchive`，用户完整解
 - WebView2 数据、会话、凭据和设置位于 `userdata/`；随包语料位于 `corpus/`
 - 只绑定 `127.0.0.1`，使用 DSH 自己生成的访问 token
 - 使用 Windows Job Object 管理 Node/DSH 进程树，退出时不遗留后台进程
-- 正式发行包在构建时从 ModelScope 下载固定版本语料，校验后随 ZIP 放入 `corpus/`
+- 正式发行包在构建时从 ModelScope 下载当时的最新语料，校验后随 ZIP 放入 `corpus/`
 
 除 ModelScope 语料外，插件所需地图、皮肤模型和贴图随包提供。第一阶段不提供静默自动更新
 或局域网开放。程序版本、DSH 版本和插件版本分别记录在 `release-manifest.json`，便于复现
@@ -77,14 +77,13 @@ cd D:\ds\prts-terrarchive-portable
 .\build-local.ps1
 ```
 
-脚本使用 [`versions.json`](versions.json) 固定 DSH、Node、pnpm、桌面 SDK 及语料的
-release/data_version；首次运行会从 ModelScope 下载并逐文件校验语料、获取固定 commit 的 DSH，
-随后验证 DSH 工作区无源码改动、安装并构建官方源码、生成生产运行闭包、发布单文件桌面 EXE、
+脚本使用 [`versions.json`](versions.json) 选择 DSH 版本并固定 Node、pnpm 与桌面 SDK；每次构建
+从 ModelScope 解析当前最新语料 release，下载并逐文件校验，随后安装并构建 DSH、生成生产运行闭包、发布单文件桌面 EXE、
 复制插件 npm `files` 白名单、执行 Windows PE 静态审计和真实 Host 冒烟测试，最后原子替换
 ZIP 并生成 SHA-256。脚本不写死盘符或代理，也不会把 `userdata/`、`.build/` 或开发文档放进
 发行 ZIP。
 
-已校验的语料缓存在 `.build/corpus/releases`，重复构建不会重新下载；固定版本或文件校验失败时
+已校验的语料缓存在 `.build/corpus/releases`，重复构建会复用未变化的文件；最新版本解析或文件校验失败时
 构建会直接停止，不会产出一个悄悄缺少资料的 ZIP。
 
 已有可用的 DSH 构建时，可以跳过耗时的官方源码重编：

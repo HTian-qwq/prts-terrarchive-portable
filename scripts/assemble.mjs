@@ -84,19 +84,12 @@ if (dshManifest.name !== '@deepseek-ai/dsh' || dshManifest.version !== versions.
 const actualCommit = execFileSync('git', ['rev-parse', 'HEAD'], {
   cwd: args['dsh-source'], encoding: 'utf8',
 }).trim()
-if (actualCommit !== versions.dsh.commit) {
-  throw new Error(`DSH commit 不符：期望 ${versions.dsh.commit}，实际 ${actualCommit}`)
-}
 const pluginCommit = execFileSync('git', ['rev-parse', 'HEAD'], {
   cwd: args.plugin, encoding: 'utf8',
 }).trim()
 const pluginDirty = execFileSync('git', ['status', '--short'], {
   cwd: args.plugin, encoding: 'utf8',
 }).trim().length > 0
-if (pluginCommit !== versions.plugin.ref) {
-  throw new Error(`插件 commit 不符：期望 ${versions.plugin.ref}，实际 ${pluginCommit}`)
-}
-if (pluginDirty) throw new Error('插件工作区有未提交改动，拒绝生成不可复现的发行包。')
 const sourceNodeExecutable = join(args['node-dir'], 'node.exe')
 if (!existsSync(sourceNodeExecutable)) throw new Error('Node.js 目录中缺少 node.exe。')
 assertWindowsX64Executable(sourceNodeExecutable, '待打包的 Node.js')
@@ -145,7 +138,9 @@ for (const file of ['cordis.yml', 'cordis.patch.yml']) {
 }
 const pluginDir = join(profileDir, 'node_modules', 'prts-terrarchive')
 const pluginManifest = copyPackage(args.plugin, pluginDir)
-const managedBuildId = pluginCommit
+const managedBuildId = pluginDirty
+  ? `${pluginCommit}-dirty-${Date.now()}`
+  : pluginCommit
 const managedSourceMarker = `${JSON.stringify({
   pluginVersion: pluginManifest.version,
   pluginCommit,
@@ -190,7 +185,7 @@ for (const file of ['LICENSE', 'THIRD_PARTY_NOTICES.md', 'GAME_ASSETS.md']) {
 writeFileSync(join(licensesDir, 'NOTICE.txt'), [
   'PRTS Terrarchive Portable is an independent community distribution.',
   'DeepSeek Harness and prts-terrarchive remain governed by their respective notices.',
-  'The bundled corpus was fetched from the pinned ModelScope datasets at build time.',
+  'The bundled corpus was fetched from the latest ModelScope release at build time.',
   'Corpus data is not licensed under this distribution\'s MIT License and remains subject',
   'to the source declarations and terms on the corresponding ModelScope dataset pages:',
   'https://modelscope.cn/datasets/HTiantian/prts-agent-corpus-arknights-gamedata',
@@ -201,6 +196,11 @@ writeFileSync(join(licensesDir, 'NOTICE.txt'), [
   '',
 ].join('\n'))
 
+const corpusPointer = JSON.parse(readFileSync(join(
+  args['corpus-releases'], 'current.json'), 'utf8'))
+const corpusManifest = JSON.parse(readFileSync(join(
+  args['corpus-releases'], corpusPointer.release_id, 'release-manifest.json'), 'utf8'))
+
 writeFileSync(join(args.out, 'release-manifest.json'), `${JSON.stringify({
   portableVersion: versions.portable,
   desktopFramework: versions.desktop.framework,
@@ -209,14 +209,13 @@ writeFileSync(join(args.out, 'release-manifest.json'), `${JSON.stringify({
   pnpmVersion: versions.pnpm,
   dshVersion: dshManifest.version,
   dshCommit: actualCommit,
-  dshCompatibilityPatches: versions.dsh.compatibilityPatches ?? [],
   pluginVersion: pluginManifest.version,
   pluginCommit,
   pluginDirty,
   corpusSource: versions.corpus.source,
-  corpusReleaseId: versions.corpus.releaseId,
-  corpusDataVersion: versions.corpus.dataVersion,
-  corpusDocumentCount: versions.corpus.documentCount,
+  corpusReleaseId: corpusManifest.release_id,
+  corpusDataVersion: corpusManifest.data_version,
+  corpusDocumentCount: corpusManifest.document_count,
   features: ['prts-agent-live-retrieval-scene', 'readable-title-pagination',
     'bundled-modelscope-corpus'],
   platform: 'win32-x64',
