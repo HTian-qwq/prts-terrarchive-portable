@@ -11,18 +11,16 @@
     "tag": "dsh-v0.1.2-alpha.1",
     "commit": "cd5ef8148158c3a752a658978873241fdf8e2bbc",
     "version": "0.1.2-alpha.1",
-    "compatibilityPatches": [
-      "cjk-quoted-strong-emphasis"
-    ]
+    "compatibilityPatches": []
   },
   "plugin": {
     "repository": "HTian-qwq/prts-terrarchive",
-    "ref": "fdbbd0ee871e78e15c69cb1e3e48d6ec5938d77b"
+    "ref": "aa316c966d67497ebf347ad8f728055b740c2d06"
   },
   "corpus": {
     "source": "modelscope",
-    "releaseId": "agent-corpus-v2-20260903-xuesong-youmeng-v1",
-    "dataVersion": "77df7c534525256af1dd36b68128cdd878ac2f3bc109636c5051fa85dd3dae09",
-    "documentCount": 29121
+    "releaseId": "agent-corpus-v2-20260904-retraveler-alias-fix-v1",
+    "dataVersion": "c90575fc10142d1d444644d92df07aff8453bc091781c2f6d7c67899ad2cde8b",
+    "documentCount": 28661
   }
 }

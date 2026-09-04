@@ -93,6 +93,10 @@ const pluginCommit = execFileSync('git', ['rev-parse', 'HEAD'], {
 const pluginDirty = execFileSync('git', ['status', '--short'], {
   cwd: args.plugin, encoding: 'utf8',
 }).trim().length > 0
+if (pluginCommit !== versions.plugin.ref) {
+  throw new Error(`插件 commit 不符：期望 ${versions.plugin.ref}，实际 ${pluginCommit}`)
+}
+if (pluginDirty) throw new Error('插件工作区有未提交改动，拒绝生成不可复现的发行包。')
 const sourceNodeExecutable = join(args['node-dir'], 'node.exe')
 if (!existsSync(sourceNodeExecutable)) throw new Error('Node.js 目录中缺少 node.exe。')
 assertWindowsX64Executable(sourceNodeExecutable, '待打包的 Node.js')
@@ -141,9 +145,7 @@ for (const file of ['cordis.yml', 'cordis.patch.yml']) {
 }
 const pluginDir = join(profileDir, 'node_modules', 'prts-terrarchive')
 const pluginManifest = copyPackage(args.plugin, pluginDir)
-const managedBuildId = pluginDirty
-  ? `${pluginCommit}-dirty-${Date.now()}`
-  : pluginCommit
+const managedBuildId = pluginCommit
 const managedSourceMarker = `${JSON.stringify({
   pluginVersion: pluginManifest.version,
   pluginCommit,

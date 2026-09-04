@@ -79,7 +79,7 @@ cd D:\ds\prts-terrarchive-portable
 
 脚本使用 [`versions.json`](versions.json) 固定 DSH、Node、pnpm、桌面 SDK 及语料的
 release/data_version；首次运行会从 ModelScope 下载并逐文件校验语料、获取固定 commit 的 DSH，
-随后安装并构建官方源码、生成生产运行闭包、发布单文件桌面 EXE、
+随后验证 DSH 工作区无源码改动、安装并构建官方源码、生成生产运行闭包、发布单文件桌面 EXE、
 复制插件 npm `files` 白名单、执行 Windows PE 静态审计和真实 Host 冒烟测试，最后原子替换
 ZIP 并生成 SHA-256。脚本不写死盘符或代理，也不会把 `userdata/`、`.build/` 或开发文档放进
 发行 ZIP。
@@ -130,6 +130,7 @@ x64 文件头，防止错误平台运行时混入发行包。
 
 内置语料来自 ModelScope 的
 [`prts-agent-corpus-arknights-gamedata`](https://modelscope.cn/datasets/HTiantian/prts-agent-corpus-arknights-gamedata)
+、[`prts-agent-corpus-endfield`](https://modelscope.cn/datasets/HTiantian/prts-agent-corpus-endfield)
 与 [`prts-agent-corpus-selfbuilt`](https://modelscope.cn/datasets/HTiantian/prts-agent-corpus-selfbuilt)。
 它们不属于本仓库 MIT 授权范围，仍适用各数据集页面的来源声明与条款；发行 ZIP 内的
 `LICENSES/NOTICE.txt` 会同时保留这一边界。

@@ -2,11 +2,6 @@ name: Build Windows portable release
 
 on:
   workflow_dispatch:
-    inputs:
-      plugin_ref:
-        description: prts-terrarchive git ref
-        required: true
-        default: main
   push:
     tags:
       - 'v*'
@@ -53,7 +48,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: HTian-qwq/prts-terrarchive
-          ref: ${{ inputs.plugin_ref || steps.versions.outputs.plugin_ref }}
+          ref: ${{ steps.versions.outputs.plugin_ref }}
           path: .build/plugin
 
       - name: Set up build Node.js
@@ -88,13 +83,22 @@ jobs:
 
       - name: Prepare exact deploy build allowlist
         shell: pwsh
-        run: node scripts/prepare-dsh-workspace.mjs .build/dsh
+        run: |
+          $dirty = (git -C .build/dsh status --porcelain --untracked-files=no | Out-String).Trim()
+          if ($dirty) { throw 'Pinned DSH checkout is not clean before packaging.' }
+          node scripts/prepare-dsh-workspace.mjs .build/dsh
 
       - name: Deploy official locked DSH runtime closure
         working-directory: .build/dsh
         shell: pwsh
         run: |
-          pnpm --config.node-linker=hoisted --config.inject-workspace-packages=true --filter dsh-python-runtime-closure --prod deploy --frozen-lockfile "$env:GITHUB_WORKSPACE/.build/dsh-deploy"
+          try {
+            pnpm --config.node-linker=hoisted --config.inject-workspace-packages=true --filter dsh-python-runtime-closure --prod deploy --frozen-lockfile "$env:GITHUB_WORKSPACE/.build/dsh-deploy"
+          } finally {
+            git checkout -- pnpm-workspace.yaml
+          }
+          $dirty = (git status --porcelain --untracked-files=no | Out-String).Trim()
+          if ($dirty) { throw 'DSH checkout changed during packaging.' }
 
       - name: Complete declared DSH workspace peer closure
         shell: pwsh

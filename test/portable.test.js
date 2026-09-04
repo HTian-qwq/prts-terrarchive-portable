@@ -20,7 +20,6 @@ import {
   syncManagedInstall,
 } from '../src/portable.mjs'
 import { assertWindowsX64Executable } from '../scripts/windows-pe.mjs'
-import { patchDshCjkMarkdown } from '../scripts/patch-dsh-cjk-markdown.mjs'
 
 test('解析 alpha.1 Host 启动 URL，并在日志中隐藏 token', () => {
   const line = 'Open http://127.0.0.1:43189/?token=Abc_123-xyz now'
@@ -165,49 +164,14 @@ test('正式构建固定 ModelScope 语料并在缺失时给出桌面提示', ()
   assert.match(launcher, /PRTS_CORPUS_RELEASES_DIR/u)
   assert.match(host, /WarnIfCorpusUnavailable/u)
   assert.match(window, /语料需要处理/u)
-  assert.equal(versions.corpus.releaseId, 'agent-corpus-v2-20260903-xuesong-youmeng-v1')
-  assert.equal(versions.corpus.documentCount, 29121)
-})
-
-test('DSH Markdown 补丁支持中文两侧的引号加粗并校验构建结果', () => {
-  const root = mkdtempSync(join(tmpdir(), 'prts-dsh-markdown-'))
-  const parserDir = join(root, 'packages', 'client', 'ui-primitives', 'src', 'markdown')
-  const testDir = join(root, 'packages', 'client', 'ui-primitives', 'tests')
-  const libDir = join(root, 'packages', 'client', 'ui-primitives', 'lib')
-  const webAssetsDir = join(root, 'apps', 'web', 'dist', 'assets')
-  mkdirSync(parserDir, { recursive: true })
-  mkdirSync(testDir, { recursive: true })
-  mkdirSync(libDir, { recursive: true })
-  mkdirSync(webAssetsDir, { recursive: true })
-  writeFileSync(join(parserDir, 'cjkFriendlyStrong.ts'), `
-    const after = classifyCharacter(code)
-    const open = !after || (after === constants.characterGroupPunctuation && Boolean(before))
-      || attentionMarkers.includes(code)
-    const commonMarkClose = !before
-      || (before === constants.characterGroupPunctuation && Boolean(after))
-      || attentionMarkers.includes(previous)
-    const markerCount = token.end.offset - token.start.offset
-    const cjkStrongClose = markerCount >= 2
-    name: 'cjkFriendlyAttention'
-`)
-  writeFileSync(join(testDir, 'markdown.client.spec.tsx'), `
-      ['**Warning!**继续', 'Warning!'],
-`)
-  writeFileSync(join(libDir, 'index.js'), '// stale build\n')
-  try {
-    patchDshCjkMarkdown(root)
-    const parser = readFileSync(join(parserDir, 'cjkFriendlyStrong.ts'), 'utf8')
-    assert.match(parser, /const cjkStrongOpen = markerCount >= 2/u)
-    assert.match(parser, /isCjkCharacter\(previous\)[^]*unicodePunctuation\(code\)/u)
-    assert.ok(parser.includes(`name: 'cjkFriendlyQuotedStrong'`))
-    const cases = readFileSync(join(testDir, 'markdown.client.spec.tsx'), 'utf8')
-    assert.ok(cases.includes('段落**“引文”**继续'))
-    assert.throws(() => patchDshCjkMarkdown(root, { checkBuilt: true }),
-      /现有 DSH 构建不含 CJK 引号加粗修复/u)
-    writeFileSync(join(libDir, 'index.js'), 'const name = "cjkFriendlyQuotedStrong"\n')
-    writeFileSync(join(webAssetsDir, 'index-fixture.js'), '"cjkFriendlyQuotedStrong"\n')
-    assert.doesNotThrow(() => patchDshCjkMarkdown(root, { checkBuilt: true }))
-  } finally {
-    rmSync(root, { recursive: true, force: true })
-  }
+  assert.equal(versions.corpus.releaseId, 'agent-corpus-v2-20260904-retraveler-alias-fix-v1')
+  assert.equal(versions.corpus.dataVersion,
+    'c90575fc10142d1d444644d92df07aff8453bc091781c2f6d7c67899ad2cde8b')
+  assert.equal(versions.corpus.documentCount, 28661)
+  assert.deepEqual(versions.dsh.compatibilityPatches, [])
+  assert.doesNotMatch(build, /patch-dsh-cjk-markdown/u)
+  assert.match(build, /DSH checkout has tracked modifications/u)
+  assert.match(build, /Plugin revision mismatch/u)
+  assert.match(assemble, /插件 commit 不符/u)
+  assert.match(assemble, /插件工作区有未提交改动/u)
 })

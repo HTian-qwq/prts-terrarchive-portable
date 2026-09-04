@@ -59,6 +59,15 @@ Assert-File (Join-Path $PluginPath 'package.json') 'prts-terrarchive plugin sour
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) { throw 'Git was not found.' }
 if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) { throw '.NET SDK was not found.' }
 
+$PluginCommit = (git -C $PluginPath rev-parse HEAD).Trim()
+$PluginDirty = (git -C $PluginPath status --porcelain | Out-String).Trim()
+if ($LASTEXITCODE -ne 0 -or $PluginDirty) {
+    throw 'prts-terrarchive must be a clean Git checkout before building.'
+}
+if ($PluginCommit -ne ([string]$Versions.plugin.ref)) {
+    throw "Plugin revision mismatch: expected $($Versions.plugin.ref), found $PluginCommit"
+}
+
 if (-not (Test-Path (Join-Path $DshSource '.git'))) {
     Write-Host 'Fetching pinned DeepSeek Harness...' -ForegroundColor Cyan
     Invoke-Checked -Command git -ArgumentList @(
@@ -72,6 +81,10 @@ $DshCommit = (git -C $DshSource rev-parse HEAD).Trim()
 if ($LASTEXITCODE -ne 0 -or $DshCommit -ne ([string]$Versions.dsh.commit)) {
     throw "DSH revision mismatch: expected $($Versions.dsh.commit), found $DshCommit"
 }
+$DshDirty = (git -C $DshSource status --porcelain --untracked-files=no | Out-String).Trim()
+if ($LASTEXITCODE -ne 0 -or $DshDirty) {
+    throw 'DSH checkout has tracked modifications. Restore the pinned official commit before building.'
+}
 
 Invoke-Checked -Command $Corepack -ArgumentList @('prepare', "pnpm@$($Versions.pnpm)", '--activate')
 Write-Host 'Downloading and verifying the pinned corpus from ModelScope...' -ForegroundColor Cyan
@@ -81,8 +94,6 @@ Invoke-Checked -Command $Node -ArgumentList @(
     '--out', $CorpusReleases,
     '--release', ([string]$Versions.corpus.releaseId),
     '--data-version', ([string]$Versions.corpus.dataVersion))
-Invoke-Checked -Command $Node -ArgumentList @(
-    (Join-Path $RepositoryRoot 'scripts\patch-dsh-cjk-markdown.mjs'), $DshSource)
 if (-not $SkipDshBuild) {
     Write-Host 'Installing and building official DSH...' -ForegroundColor Cyan
     Push-Location $DshSource
@@ -90,23 +101,30 @@ if (-not $SkipDshBuild) {
         Invoke-Checked -Command $Corepack -ArgumentList @('pnpm', 'install', '--frozen-lockfile')
         Invoke-Checked -Command $Corepack -ArgumentList @('pnpm', 'run', 'build:official')
     } finally { Pop-Location }
-} else {
-    Invoke-Checked -Command $Node -ArgumentList @(
-        (Join-Path $RepositoryRoot 'scripts\patch-dsh-cjk-markdown.mjs'), $DshSource, '--check-built')
 }
 
 Write-Host 'Creating the production runtime closure...' -ForegroundColor Cyan
-Invoke-Checked -Command $Node -ArgumentList @(
-    (Join-Path $RepositoryRoot 'scripts\prepare-dsh-workspace.mjs'), $DshSource)
 if (Test-Path -LiteralPath $DshDeploy) {
     Remove-Item -LiteralPath $DshDeploy -Recurse -Force
 }
-Push-Location $DshSource
+$DshWorkspace = Join-Path $DshSource 'pnpm-workspace.yaml'
+$DshWorkspaceOriginal = [System.IO.File]::ReadAllBytes($DshWorkspace)
 try {
-    Invoke-Checked -Command $Corepack -ArgumentList @(
-        'pnpm', '--config.node-linker=hoisted', '--config.inject-workspace-packages=true',
-        '--filter', 'dsh-python-runtime-closure', '--prod', 'deploy', '--frozen-lockfile', $DshDeploy)
-} finally { Pop-Location }
+    Invoke-Checked -Command $Node -ArgumentList @(
+        (Join-Path $RepositoryRoot 'scripts\prepare-dsh-workspace.mjs'), $DshSource)
+    Push-Location $DshSource
+    try {
+        Invoke-Checked -Command $Corepack -ArgumentList @(
+            'pnpm', '--config.node-linker=hoisted', '--config.inject-workspace-packages=true',
+            '--filter', 'dsh-python-runtime-closure', '--prod', 'deploy', '--frozen-lockfile', $DshDeploy)
+    } finally { Pop-Location }
+} finally {
+    [System.IO.File]::WriteAllBytes($DshWorkspace, $DshWorkspaceOriginal)
+}
+$DshDirty = (git -C $DshSource status --porcelain --untracked-files=no | Out-String).Trim()
+if ($LASTEXITCODE -ne 0 -or $DshDirty) {
+    throw 'DSH checkout changed during packaging; refusing to assemble a modified runtime.'
+}
 Invoke-Checked -Command $Node -ArgumentList @(
     (Join-Path $RepositoryRoot 'scripts\complete-dsh-workspace-closure.mjs'), $DshSource, $DshDeploy)
 
