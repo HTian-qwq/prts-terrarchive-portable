@@ -177,13 +177,14 @@ export async function fetchCurrentCorpus(args, { fetchImpl = fetch } = {}) {
     requireRelease: true,
     onProgress(progress) {
       const total = progress.filesTotal ?? '?'
+      const sourceLabel = progress.source === 'modelscope' ? 'ModelScope' : 'PRTS.chat fallback'
       const boundary = progress.phase !== 'downloading'
         || progress.filesDone === 0
         || progress.filesDone === progress.filesTotal
         || progress.filesDone - lastReportedFiles >= 50
       if (!boundary) return
       lastReportedFiles = progress.filesDone
-      console.log(`PRTS.chat corpus: ${progress.phase} ${progress.filesDone}/${total} files`)
+      console.log(`Corpus ${sourceLabel}: ${progress.phase} ${progress.filesDone}/${total} files`)
     },
   })
 
@@ -206,7 +207,8 @@ export async function fetchCurrentCorpus(args, { fetchImpl = fetch } = {}) {
       throw new Error(`${packId} data_version 不符：需要 ${expectedVersion}，实际 ${pack.data_version}`)
     }
   }
-  console.log(`PRTS.chat current corpus ready: ${current.releaseId} (${result.status})`)
+  console.log(`PRTS.chat current corpus ready: ${current.releaseId}`
+    + ` (status=${result.status}, source=${result.source ?? pointer.channel ?? 'cached'})`)
   return { current, result, manifest }
 }
 

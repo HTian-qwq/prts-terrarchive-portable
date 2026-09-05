@@ -185,6 +185,8 @@ test('正式构建先校验 PRTS.chat current 语料并传给组装器', () => {
   assert.deepEqual(versions.corpus, { source: 'prts.chat', track: 'current' })
   assert.match(fetchCorpus, /resolveTrustedCurrentRelease/u)
   assert.match(fetchCorpus, /order: \['modelscope', 'site'\]/u)
+  assert.match(fetchCorpus, /Corpus \$\{sourceLabel\}/u)
+  assert.match(fetchCorpus, /source=\$\{result\.source \?\? pointer\.channel/u)
   assert.doesNotMatch(fetchCorpus, /resolveModelScopeCurrentRelease/u)
   assert.doesNotMatch(fetchCorpus, /--release|--data-version/u)
   assert.doesNotMatch(build, /patch-dsh-cjk-markdown/u)
