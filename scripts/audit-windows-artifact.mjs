@@ -52,7 +52,8 @@ if (!existsSync(gameAssetNotice) || !readFileSync(gameAssetNotice, 'utf8').inclu
   throw new Error('发行包缺少游戏相关资源的非 MIT 授权边界声明。')
 }
 const distributionNotice = readFileSync(join(artifact, 'LICENSES', 'NOTICE.txt'), 'utf8')
-if (!distributionNotice.includes('modelscope.cn/datasets/HTiantian/prts-agent-corpus-arknights-gamedata')
+if (!distributionNotice.includes('https://prts.chat')
+    || !distributionNotice.includes('modelscope.cn/datasets/HTiantian/prts-agent-corpus-arknights-gamedata')
     || !distributionNotice.includes('modelscope.cn/datasets/HTiantian/prts-agent-corpus-endfield')
     || !distributionNotice.includes('Corpus data is not licensed')) {
   throw new Error('发行包缺少内置 ModelScope 语料的来源与非 MIT 声明。')
@@ -64,9 +65,9 @@ if (!manifest.features?.includes('prts-agent-live-retrieval-scene')) {
 if (!manifest.features?.includes('readable-title-pagination')) {
   throw new Error('发行清单没有声明可读标题分页能力。')
 }
-if (!manifest.features?.includes('bundled-modelscope-corpus')
-    || manifest.corpusSource !== 'modelscope') {
-  throw new Error('发行清单没有声明随包提供的 ModelScope 语料。')
+if (!manifest.features?.includes('bundled-verified-corpus')
+    || manifest.corpusSource !== 'prts.chat') {
+  throw new Error('发行清单没有声明由 PRTS.chat current 选版的已校验语料。')
 }
 const corpusRoot = join(artifact, 'corpus', 'releases')
 const corpusPointerPath = join(corpusRoot, 'current.json')

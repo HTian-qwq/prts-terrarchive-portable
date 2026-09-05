@@ -185,9 +185,10 @@ for (const file of ['LICENSE', 'THIRD_PARTY_NOTICES.md', 'GAME_ASSETS.md']) {
 writeFileSync(join(licensesDir, 'NOTICE.txt'), [
   'PRTS Terrarchive Portable is an independent community distribution.',
   'DeepSeek Harness and prts-terrarchive remain governed by their respective notices.',
-  'The bundled corpus was fetched from the latest ModelScope release at build time.',
+  'The bundled corpus release was selected from PRTS.chat current and hash-verified at build time.',
   'Corpus data is not licensed under this distribution\'s MIT License and remains subject',
-  'to the source declarations and terms on the corresponding ModelScope dataset pages:',
+  'to the source declarations and terms on the corresponding PRTS.chat and ModelScope pages:',
+  'https://prts.chat',
   'https://modelscope.cn/datasets/HTiantian/prts-agent-corpus-arknights-gamedata',
   'https://modelscope.cn/datasets/HTiantian/prts-agent-corpus-endfield',
   'https://modelscope.cn/datasets/HTiantian/prts-agent-corpus-selfbuilt',
@@ -217,7 +218,7 @@ writeFileSync(join(args.out, 'release-manifest.json'), `${JSON.stringify({
   corpusDataVersion: corpusManifest.data_version,
   corpusDocumentCount: corpusManifest.document_count,
   features: ['prts-agent-live-retrieval-scene', 'readable-title-pagination',
-    'bundled-modelscope-corpus'],
+    'bundled-verified-corpus'],
   platform: 'win32-x64',
 }, null, 2)}\n`)
 

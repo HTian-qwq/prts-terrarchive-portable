@@ -65,11 +65,17 @@ if (-not (Test-Path (Join-Path $DshSource '.git'))) {
         'clone', '--branch', ([string]$Versions.dsh.tag), '--depth', '1',
         'https://github.com/deepseek-ai/deepseek-harness.git', $DshSource)
 }
+$DshPackageJson = Join-Path $DshSource 'package.json'
+Assert-File $DshPackageJson 'DeepSeek Harness package manifest'
+$DshPackage = Get-Content $DshPackageJson -Raw | ConvertFrom-Json
+if ([string]$DshPackage.version -ne [string]$Versions.dsh.version) {
+    throw "Cached DSH version is $($DshPackage.version), but versions.json requires $($Versions.dsh.version). Remove .build\dsh and rebuild."
+}
 
 Invoke-Checked -Command $Corepack -ArgumentList @('prepare', "pnpm@$($Versions.pnpm)", '--activate')
-Write-Host 'Resolving, downloading, and verifying the latest corpus from ModelScope...' -ForegroundColor Cyan
+Write-Host 'Resolving and verifying the current corpus from PRTS.chat...' -ForegroundColor Cyan
 Invoke-Checked -Command $Node -ArgumentList @(
-    (Join-Path $RepositoryRoot 'scripts\fetch-modelscope-corpus.mjs'),
+    (Join-Path $RepositoryRoot 'scripts\fetch-current-corpus.mjs'),
     '--plugin', (Resolve-Path $PluginPath).Path,
     '--out', $CorpusReleases)
 if (-not $SkipDshBuild) {

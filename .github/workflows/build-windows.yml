@@ -74,6 +74,13 @@ jobs:
           npm run check
           Pop-Location
 
+      - name: Download and verify current corpus
+        shell: pwsh
+        run: |
+          node scripts/fetch-current-corpus.mjs `
+            --plugin .build/plugin `
+            --out .build/corpus/releases
+
       - name: Install and build official DSH
         working-directory: .build/dsh
         shell: pwsh
@@ -142,9 +149,14 @@ jobs:
             --dsh-deploy .build/dsh-deploy `
             --dsh-source .build/dsh `
             --plugin .build/plugin `
+            --corpus-releases .build/corpus/releases `
             --node-dir .build/node `
             --desktop-exe ".build/desktop/PRTS Terrarchive.exe" `
             --out "dist/$name"
+
+      - name: Audit packaged Windows x64 runtime
+        shell: pwsh
+        run: node scripts/audit-windows-artifact.mjs dist/PRTS-Terrarchive-Portable-windows-x64
 
       - name: Smoke test packaged Host and plugin
         shell: pwsh

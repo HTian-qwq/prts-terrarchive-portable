@@ -19,6 +19,11 @@ import {
   redactToken,
   syncManagedInstall,
 } from '../src/portable.mjs'
+import {
+  fetchCurrentCorpus,
+  resolveTrustedCurrentRelease,
+  TRUSTED_CURRENT_URL,
+} from '../scripts/fetch-current-corpus.mjs'
 import { assertWindowsX64Executable } from '../scripts/windows-pe.mjs'
 
 test('解析 alpha.1 Host 启动 URL，并在日志中隐藏 token', () => {
@@ -148,27 +153,144 @@ test('窗口进入后台时暂停地图并挂起 WebView2，且记录分进程�
   assert.match(source, /Memory\[\{reason\}\]/u)
 })
 
-test('正式构建固定 ModelScope 语料并在缺失时给出桌面提示', () => {
+test('正式构建先校验 PRTS.chat current 语料并传给组装器', () => {
   const root = join(import.meta.dirname, '..')
   const build = readFileSync(join(root, 'build-local.ps1'), 'utf8')
+  const workflow = readFileSync(join(root, '.github', 'workflows', 'build-windows.yml'), 'utf8')
   const assemble = readFileSync(join(root, 'scripts', 'assemble.mjs'), 'utf8')
   const versions = JSON.parse(readFileSync(join(root, 'versions.json'), 'utf8'))
   const launcher = readFileSync(join(root, 'src', 'launcher.mjs'), 'utf8')
   const host = readFileSync(join(root, 'desktop', 'DshHost.cs'), 'utf8')
   const window = readFileSync(join(root, 'desktop', 'MainWindow.cs'), 'utf8')
-  assert.match(build, /fetch-modelscope-corpus\.mjs/u)
+  assert.match(build, /fetch-current-corpus\.mjs/u)
   assert.match(build, /--corpus-releases/u)
-  assert.match(assemble, /bundled-modelscope-corpus/u)
+  assert.match(workflow, /node scripts\/fetch-current-corpus\.mjs[^]*--out \.build\/corpus\/releases/u)
+  assert.match(workflow, /node scripts\/assemble\.mjs[^]*--corpus-releases \.build\/corpus\/releases/u)
+  assert.match(workflow, /audit-windows-artifact\.mjs/u)
+  assert.ok(workflow.indexOf('node scripts/fetch-current-corpus.mjs')
+    < workflow.indexOf('node scripts/assemble.mjs'))
+  assert.ok(workflow.indexOf('node scripts/assemble.mjs')
+    < workflow.indexOf('audit-windows-artifact.mjs'))
+  assert.ok(workflow.indexOf('audit-windows-artifact.mjs')
+    < workflow.indexOf('smoke-artifact.mjs'))
+  assert.match(assemble, /bundled-verified-corpus/u)
   assert.match(assemble, /prts-agent-corpus-endfield/u)
   assert.match(assemble, /join\(args\.out, 'corpus', 'releases'\)/u)
   assert.match(launcher, /PRTS_CORPUS_RELEASES_DIR/u)
   assert.match(host, /WarnIfCorpusUnavailable/u)
   assert.match(window, /语料需要处理/u)
-  const fetchCorpus = readFileSync(join(root, 'scripts', 'fetch-modelscope-corpus.mjs'), 'utf8')
-  assert.equal(versions.corpus.track, 'latest')
-  assert.match(fetchCorpus, /resolveModelScopeCurrentRelease/u)
+  const fetchCorpus = readFileSync(join(root, 'scripts', 'fetch-current-corpus.mjs'), 'utf8')
+  assert.deepEqual(versions.dsh, { tag: 'dsh-v0.1.3-alpha.1', version: '0.1.3-alpha.1' })
+  assert.match(build, /Cached DSH version[^]*Remove \.build\\dsh and rebuild/u)
+  assert.deepEqual(versions.corpus, { source: 'prts.chat', track: 'current' })
+  assert.match(fetchCorpus, /resolveTrustedCurrentRelease/u)
+  assert.match(fetchCorpus, /order: \['modelscope', 'site'\]/u)
+  assert.doesNotMatch(fetchCorpus, /resolveModelScopeCurrentRelease/u)
   assert.doesNotMatch(fetchCorpus, /--release|--data-version/u)
   assert.doesNotMatch(build, /patch-dsh-cjk-markdown/u)
   assert.doesNotMatch(build, /status --porcelain/u)
   assert.doesNotMatch(assemble, /commit 不符|未提交改动/u)
+})
+
+test('ModelScope 只有 community 发布新目录时仍由 PRTS.chat current 决定完整版本', async () => {
+  const releaseId = 'agent-corpus-v2-20260905-character-activity-split-v1'
+  const dataVersion = 'a'.repeat(64)
+  const packIds = [
+    'official_game',
+    'endfield_official_game',
+    'endfield_reviewed_knowledge',
+    'reviewed_wiki',
+    'terra_journey',
+    'entities',
+    'references',
+  ]
+  const requested = []
+  const current = await resolveTrustedCurrentRelease({
+    fetchImpl: async (url) => {
+      requested.push(url)
+      return {
+        ok: true,
+        status: 200,
+        async text() {
+          return JSON.stringify({
+            code: 200,
+            data: {
+              release_id: releaseId,
+              data_version: dataVersion,
+              minimum_agent_version: '0.1.0',
+              distribution_status: 'published',
+              document_count: 31092,
+              packs: packIds.map((packId, index) => ({
+                pack_id: packId,
+                manifest_path: `${packId}/pack-manifest.json`,
+                data_version: (index + 1).toString(16).repeat(64),
+              })),
+              // This is the real partial-publication shape that previously made
+              // a lexicographic ModelScope scan select a release absent in two repos.
+              mirrors: [{
+                provider: 'modelscope',
+                repo_id: 'HTiantian/prts-agent-corpus-selfbuilt',
+                pack_ids: ['reviewed_wiki', 'terra_journey', 'entities', 'references'],
+              }],
+            },
+          })
+        },
+      }
+    },
+  })
+
+  assert.equal(current.releaseId, releaseId)
+  assert.equal(current.dataVersion, dataVersion)
+  assert.equal(current.minimumAgentVersion, '0.1.0')
+  assert.equal(current.distributionStatus, 'published')
+  assert.equal(current.packVersions.size, 7)
+  assert.deepEqual(requested, [TRUSTED_CURRENT_URL])
+  assert.doesNotMatch(requested.join('\n'), /modelscope/u)
+})
+
+test('pinned alpha 插件低于 current 稳定版门槛时在下载前失败', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'prts-version-gate-test-'))
+  const plugin = join(root, 'plugin')
+  const marker = join(root, 'ensure-called')
+  mkdirSync(join(plugin, 'src'), { recursive: true })
+  writeFileSync(join(plugin, 'package.json'), JSON.stringify({
+    type: 'module',
+    version: '0.1.0-alpha.1',
+  }))
+  writeFileSync(join(plugin, 'src', 'installer.js'), [
+    "import { writeFileSync } from 'node:fs'",
+    `export async function ensureCorpusRelease() { writeFileSync(${JSON.stringify(marker)}, '') }`,
+    'export async function validateLocalRelease() { throw new Error("unexpected validation") }',
+  ].join('\n'))
+  const packIds = [
+    'official_game', 'endfield_official_game', 'endfield_reviewed_knowledge',
+    'reviewed_wiki', 'terra_journey', 'entities', 'references',
+  ]
+  const fetchImpl = async () => ({
+    ok: true,
+    status: 200,
+    async text() {
+      return JSON.stringify({ code: 200, data: {
+        release_id: 'agent-corpus-test',
+        data_version: 'a'.repeat(64),
+        minimum_agent_version: '0.1.0',
+        distribution_status: 'published',
+        document_count: 7,
+        packs: packIds.map((packId, index) => ({
+          pack_id: packId,
+          manifest_path: `${packId}/pack-manifest.json`,
+          data_version: (index + 1).toString(16).repeat(64),
+        })),
+      } })
+    },
+  })
+  try {
+    await assert.rejects(
+      () => fetchCurrentCorpus({ plugin, out: join(root, 'releases') }, { fetchImpl }),
+      /至少需要 prts-terrarchive 0\.1\.0[^]*0\.1\.0-alpha\.1/u,
+    )
+    assert.equal(existsSync(marker), false, 'ensureCorpusRelease 不应被调用')
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
 })

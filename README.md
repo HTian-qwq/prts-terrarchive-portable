@@ -9,16 +9,16 @@ Node.js、固定版本 DeepSeek Harness 和 `prts-terrarchive`，用户完整解
 ## 当前范围
 
 - Windows 10/11 x64 ZIP
-- 固定 DSH `0.1.2-alpha.1` 官方 tag 和 commit
+- 使用 DSH `0.1.3-alpha.1` 官方 tag（不额外固定 commit）
 - 预装 PRTS 插件及「PRTS 模式」preset
 - 单实例桌面窗口和系统托盘菜单
 - 关闭窗口缩到托盘，可显示窗口、重启服务、打开数据目录或彻底退出
 - WebView2 数据、会话、凭据和设置位于 `userdata/`；随包语料位于 `corpus/`
 - 只绑定 `127.0.0.1`，使用 DSH 自己生成的访问 token
 - 使用 Windows Job Object 管理 Node/DSH 进程树，退出时不遗留后台进程
-- 正式发行包在构建时从 ModelScope 下载当时的最新语料，校验后随 ZIP 放入 `corpus/`
+- 正式发行包在构建时由 PRTS.chat `current` 选定完整语料，逐分片校验后随 ZIP 放入 `corpus/`
 
-除 ModelScope 语料外，插件所需地图、皮肤模型和贴图随包提供。第一阶段不提供静默自动更新
+除内置语料外，插件所需地图、皮肤模型和贴图随包提供。第一阶段不提供静默自动更新
 或局域网开放。程序版本、DSH 版本和插件版本分别记录在 `release-manifest.json`，便于复现
 和回滚。
 
@@ -43,7 +43,7 @@ PRTS-Terrarchive-Portable-windows-x64/
 │  ├─ node/
 │  └─ dsh/
 ├─ app/
-├─ corpus/releases/         # 构建时从 ModelScope 下载并校验的固定语料
+├─ corpus/releases/         # 构建时按 PRTS.chat current 选版并校验的固定语料
 ├─ templates/
 │  ├─ profiles/web/
 │  └─ .agent-presets/prts/
@@ -78,10 +78,11 @@ cd D:\ds\prts-terrarchive-portable
 ```
 
 脚本使用 [`versions.json`](versions.json) 选择 DSH 版本并固定 Node、pnpm 与桌面 SDK；每次构建
-从 ModelScope 解析当前最新语料 release，下载并逐文件校验，随后安装并构建 DSH、生成生产运行闭包、发布单文件桌面 EXE、
-复制插件 npm `files` 白名单、执行 Windows PE 静态审计和真实 Host 冒烟测试，最后原子替换
+从 PRTS.chat `current` 解析当前公开语料 release，下载并逐分片校验，随后安装并构建 DSH、生成生产运行闭包、发布单文件桌面 EXE、
+复制插件 `package.json#files` 白名单、执行 Windows PE 静态审计和真实 Host 冒烟测试，最后原子替换
 ZIP 并生成 SHA-256。脚本不写死盘符或代理，也不会把 `userdata/`、`.build/` 或开发文档放进
-发行 ZIP。
+发行 ZIP。若 `versions.json` 固定的插件版本低于 current 的 `minimum_agent_version`，构建会在下载
+语料前直接失败，必须先固定一个兼容的插件提交。
 
 已校验的语料缓存在 `.build/corpus/releases`，重复构建会复用未变化的文件；最新版本解析或文件校验失败时
 构建会直接停止，不会产出一个悄悄缺少资料的 ZIP。
@@ -124,10 +125,10 @@ x64 文件头，防止错误平台运行时混入发行包。
 `prts-terrarchive` 的许可证和第三方声明。
 
 《明日方舟》《明日方舟：终末地》的名称、图像、模型、贴图及其他游戏内容不属于 MIT
-授权范围。本发行版捆绑构建时从 ModelScope 校验下载的语料；随包提供的地图、皮肤模型和贴图继续遵循
+授权范围。本发行版捆绑构建时由 PRTS.chat `current` 选版并逐分片校验的语料；随包提供的地图、皮肤模型和贴图继续遵循
 `prts-terrarchive/GAME_ASSETS.md` 的独立边界声明。
 
-内置语料来自 ModelScope 的
+内置语料对应的公开 ModelScope 镜像与来源声明位于
 [`prts-agent-corpus-arknights-gamedata`](https://modelscope.cn/datasets/HTiantian/prts-agent-corpus-arknights-gamedata)
 、[`prts-agent-corpus-endfield`](https://modelscope.cn/datasets/HTiantian/prts-agent-corpus-endfield)
 与 [`prts-agent-corpus-selfbuilt`](https://modelscope.cn/datasets/HTiantian/prts-agent-corpus-selfbuilt)。
