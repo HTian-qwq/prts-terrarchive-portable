@@ -47,6 +47,20 @@ function Add-ToolPath([string]$Path) {
     }
 }
 
+function Assert-NativeBuildTools {
+    $ProgramFilesX86 = [Environment]::GetFolderPath('ProgramFilesX86')
+    $VsWhere = Join-Path $ProgramFilesX86 'Microsoft Visual Studio\Installer\vswhere.exe'
+    if (-not (Test-Path -LiteralPath $VsWhere -PathType Leaf)) {
+        throw 'Building DSH requires Visual Studio 2022 Build Tools with the Desktop development with C++ workload (MSVC x64/x86 and a Windows SDK).'
+    }
+    $Installation = & $VsWhere -latest -products '*' `
+        -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+        -property installationPath
+    if ($LASTEXITCODE -ne 0 -or -not $Installation) {
+        throw 'Visual Studio was found, but the C++ x64/x86 build tools are missing. Add the Desktop development with C++ workload and a Windows SDK.'
+    }
+}
+
 Set-Location $RepositoryRoot
 New-Item -ItemType Directory -Force $BuildRoot, (Split-Path -Parent $OutputDirectory) | Out-Null
 Add-ToolPath (Join-Path $ToolsRoot 'git\cmd')
@@ -58,6 +72,7 @@ Assert-File (Join-Path $PluginPath 'package.json') 'prts-terrarchive plugin sour
 
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) { throw 'Git was not found.' }
 if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) { throw '.NET SDK was not found.' }
+if (-not $SkipDshBuild) { Assert-NativeBuildTools }
 
 if (-not (Test-Path (Join-Path $DshSource '.git'))) {
     Write-Host 'Fetching DeepSeek Harness...' -ForegroundColor Cyan

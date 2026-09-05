@@ -70,6 +70,10 @@ D:\ds\
 └─ prts-terrarchive-portable\
 ```
 
+构建 DSH 还需要 Visual Studio 2022 Build Tools 的 **Desktop development with C++** workload，
+包括 MSVC x64/x86 与 Windows 10/11 SDK。DSH 的 `fs-ext` 会在构建时编译 Windows
+`LockFileEx` 原生绑定，因此该工具链不能通过跳过安装脚本替代；最终用户运行发行包不需要安装它。
+
 在 PowerShell 中运行：
 
 ```powershell
