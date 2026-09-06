@@ -32,6 +32,7 @@ const requiredPortableFiles = [
   '使用说明.txt',
   'app/launcher.mjs',
   'runtime/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js',
+  'templates/profiles/web/cordis.patch.yml',
   'templates/profiles/web/node_modules/prts-terrarchive/package.json',
   'templates/.agent-presets/prts/preset.yml',
 ]
@@ -39,6 +40,13 @@ for (const relativePath of requiredPortableFiles) {
   if (!existsSync(join(artifact, relativePath))) {
     throw new Error(`发行包缺少文件：${relativePath}`)
   }
+}
+
+const profilePatch = readFileSync(join(
+  artifact, 'templates', 'profiles', 'web', 'cordis.patch.yml'), 'utf8')
+if (!/- id: agent-presets\s+config:\s+default: prts/u.test(profilePatch)
+    || !/- id: prts-corpus\s+config:\s+uiSkin: prts-agent/u.test(profilePatch)) {
+  throw new Error('发行包没有默认启用 PRTS 模式与 PRTS Agent 皮肤。')
 }
 
 for (const forbiddenPath of ['Start PRTS.cmd', 'Stop PRTS.cmd', 'userdata']) {

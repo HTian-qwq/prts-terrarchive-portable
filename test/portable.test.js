@@ -51,6 +51,13 @@ test('合并 profile 时保留第三方 bundle，并固定托管插件', () => {
   assert.equal(merged.dsh.profile.patchReload, 'live')
 })
 
+test('发行版首次启动默认使用 PRTS 模式与 PRTS Agent 皮肤', () => {
+  const patch = readFileSync(join(
+    import.meta.dirname, '..', 'templates', 'profile', 'cordis.patch.yml'), 'utf8')
+  assert.match(patch, /- id: agent-presets\s+config:\s+default: prts/u)
+  assert.match(patch, /- id: prts-corpus\s+config:\s+uiSkin: prts-agent/u)
+})
+
 test('托管目录仅在发行标记变化时原子替换', () => {
   const root = mkdtempSync(join(tmpdir(), 'prts-managed-test-'))
   const appRoot = join(root, 'app')
@@ -76,9 +83,12 @@ test('托管目录仅在发行标记变化时原子替换', () => {
   try {
     syncManagedInstall({ appRoot, dataRoot })
     const installed = join(dataRoot, 'profiles', 'web', 'node_modules', 'prts-terrarchive')
+    const installedPatch = join(dataRoot, 'profiles', 'web', 'cordis.patch.yml')
     writeFileSync(join(installed, 'sentinel.txt'), 'keep when current')
+    writeFileSync(installedPatch, 'user: selected\n')
     syncManagedInstall({ appRoot, dataRoot })
     assert.equal(readFileSync(join(installed, 'sentinel.txt'), 'utf8'), 'keep when current')
+    assert.equal(readFileSync(installedPatch, 'utf8'), 'user: selected\n')
 
     writeFileSync(join(plugin, 'content.txt'), 'second')
     writeFileSync(join(plugin, '.prts-portable-source.json'), '{"build":"two"}\n')

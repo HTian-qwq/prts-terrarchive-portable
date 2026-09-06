@@ -10,7 +10,8 @@ Node.js、固定版本 DeepSeek Harness 和 `prts-terrarchive`，用户完整解
 
 - Windows 10/11 x64 ZIP
 - 使用 DSH `0.1.3-alpha.1` 官方 tag（不额外固定 commit）
-- 预装 PRTS 插件及「PRTS 模式」preset
+- 预装 PRTS 插件及「PRTS 模式」preset，并在首次启动时默认选用该模式
+- 首次启动默认使用「PRTS Agent」皮肤；用户之后的模式与皮肤选择不会被升级覆盖
 - 单实例桌面窗口和系统托盘菜单
 - 关闭窗口缩到托盘，可显示窗口、重启服务、打开数据目录或彻底退出
 - WebView2 数据、会话、凭据和设置位于 `userdata/`；随包语料位于 `corpus/`
@@ -28,7 +29,7 @@ Node.js、固定版本 DeepSeek Harness 和 `prts-terrarchive`，用户完整解
 2. 校验 SHA-256 后完整解压。
 3. 双击 `PRTS Terrarchive.exe`。
 4. 在设置中配置模型；进入“插件 → PRTS 语料”确认内置资料已就绪或下载更新。
-5. 新建会话，选择“PRTS 模式”。
+5. 新建会话；发行版默认使用“PRTS 模式”和“PRTS Agent”皮肤，也可以在界面中切换。
 
 关闭主窗口只会缩到系统托盘；通过托盘菜单的“退出”可停止 Host 并彻底退出。不要公开分享
 `userdata/`，其中可能包含明文模型凭据和私人会话。发行文件夹必须位于当前用户可写的位置，

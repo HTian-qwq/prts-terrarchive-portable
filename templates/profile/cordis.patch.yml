@@ -1,2 +1,10 @@
-# Portable-owned defaults intentionally leave the official Web composition unchanged.
-[]
+# Portable-owned first-run defaults. DSH settings and prts-corpus.json remain
+# higher-priority user layers, so upgrading an existing userdata directory does
+# not reset choices already made in the UI.
+- id: agent-presets
+  config:
+    default: prts
+
+- id: prts-corpus
+  config:
+    uiSkin: prts-agent

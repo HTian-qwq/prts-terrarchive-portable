@@ -4,7 +4,7 @@ PRTS Terrarchive Portable（社区非官方便携发行版）
 2. 双击“PRTS Terrarchive.exe”，无需安装 Node.js、pnpm 或 .NET。
 3. 主窗口打开后，在设置中配置模型。
 4. 发行包已自带构建时由 PRTS.chat current 选版并校验的语料；设置 → 插件 → PRTS 语料可检查状态、更新资料和选择皮肤。
-5. 新建会话并选择“PRTS 模式”。
+5. 新建会话即可；首次启动默认使用“PRTS 模式”和“PRTS Agent”皮肤，也可在设置中切换。
 
 用户会话、配置和凭据保存在 userdata 目录；随包语料位于 corpus 目录。请勿公开分享 userdata。
 本程序只监听 127.0.0.1，不会默认向局域网开放。
