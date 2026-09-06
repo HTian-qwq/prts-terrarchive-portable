@@ -133,8 +133,7 @@ x64 文件头，防止错误平台运行时混入发行包。
 `prts-terrarchive/GAME_ASSETS.md` 的独立边界声明。
 
 内置语料对应的公开 ModelScope 镜像与来源声明位于
-[`prts-agent-corpus-arknights-gamedata`](https://modelscope.cn/datasets/HTiantian/prts-agent-corpus-arknights-gamedata)
-、[`prts-agent-corpus-endfield`](https://modelscope.cn/datasets/HTiantian/prts-agent-corpus-endfield)
-与 [`prts-agent-corpus-selfbuilt`](https://modelscope.cn/datasets/HTiantian/prts-agent-corpus-selfbuilt)。
+[`prts-agent-corpus-arknights`](https://modelscope.cn/datasets/HTiantian/prts-agent-corpus-arknights)
+与 [`prts-agent-corpus-endfield`](https://modelscope.cn/datasets/HTiantian/prts-agent-corpus-endfield)。
 它们不属于本仓库 MIT 授权范围，仍适用各数据集页面的来源声明与条款；发行 ZIP 内的
 `LICENSES/NOTICE.txt` 会同时保留这一边界。

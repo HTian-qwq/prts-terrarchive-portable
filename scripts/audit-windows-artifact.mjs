@@ -53,7 +53,7 @@ if (!existsSync(gameAssetNotice) || !readFileSync(gameAssetNotice, 'utf8').inclu
 }
 const distributionNotice = readFileSync(join(artifact, 'LICENSES', 'NOTICE.txt'), 'utf8')
 if (!distributionNotice.includes('https://prts.chat')
-    || !distributionNotice.includes('modelscope.cn/datasets/HTiantian/prts-agent-corpus-arknights-gamedata')
+    || !distributionNotice.includes('modelscope.cn/datasets/HTiantian/prts-agent-corpus-arknights')
     || !distributionNotice.includes('modelscope.cn/datasets/HTiantian/prts-agent-corpus-endfield')
     || !distributionNotice.includes('Corpus data is not licensed')) {
   throw new Error('发行包缺少内置 ModelScope 语料的来源与非 MIT 声明。')
