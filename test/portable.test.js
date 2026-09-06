@@ -153,6 +153,21 @@ test('无边框桌面外壳提供可拖动标题区与八方向缩放', () => {
   }
 })
 
+test('桌面外壳提供可恢复的 F11 真全屏与 Escape 退出', () => {
+  const source = readFileSync(join(import.meta.dirname, '..', 'desktop', 'MainWindow.cs'), 'utf8')
+  assert.match(source, /window\.addEventListener\('keydown'[^]*event\.key === 'F11'/u)
+  assert.match(source, /post\('fullscreen:toggle'\)/u)
+  assert.match(source, /event\.key === 'Escape' && fullScreen[^]*post\('fullscreen:exit'\)/u)
+  assert.match(source, /protected override bool ProcessCmdKey/u)
+  assert.match(source, /key == Keys\.F11[^]*ToggleFullScreen\(\)/u)
+  assert.match(source, /key == Keys\.Escape && fullScreen[^]*ExitFullScreen\(\)/u)
+  assert.match(source, /boundsBeforeFullScreen = [^;]+RestoreBounds/u)
+  assert.match(source, /var screenBounds = Screen\.FromControl\(this\)\.Bounds/u)
+  assert.match(source, /MaximizedBounds = Rectangle\.Empty;[^]*Bounds = screenBounds/u)
+  assert.match(source, /MaximizedBounds = previousMaximizedBounds;[^]*Bounds = previousBounds/u)
+  assert.match(source, /if \(fullScreen\)[^]*ExitFullScreen\(\);[^]*return;/u)
+})
+
 test('窗口进入后台时暂停地图并挂起 WebView2，且记录分进程内存', () => {
   const source = readFileSync(join(import.meta.dirname, '..', 'desktop', 'MainWindow.cs'), 'utf8')
   assert.match(source, /RequestBackgroundMode\(true\);[^]*Hide\(\);/u)

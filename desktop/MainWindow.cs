@@ -31,6 +31,10 @@ internal sealed class MainWindow : Form
     private bool pageReady;
     private bool backgroundRequested;
     private bool backgroundApplied;
+    private bool fullScreen;
+    private Rectangle boundsBeforeFullScreen;
+    private Rectangle maximizedBoundsBeforeFullScreen;
+    private FormWindowState windowStateBeforeFullScreen = FormWindowState.Normal;
     private Uri? hostUri;
 
     public MainWindow(
@@ -104,7 +108,7 @@ internal sealed class MainWindow : Form
         {
             LayoutWindowChrome();
             ApplyWindowShape();
-            maximizeButton.Text = WindowState == FormWindowState.Maximized ? "❐" : "□";
+            maximizeButton.Text = fullScreen || WindowState == FormWindowState.Maximized ? "❐" : "□";
             RequestBackgroundMode(WindowState == FormWindowState.Minimized);
         };
         FormClosing += HandleFormClosing;
@@ -166,6 +170,18 @@ internal sealed class MainWindow : Form
             (() => {
               if (window !== window.top) return;
               const post = action => window.chrome.webview.postMessage('prts-shell-action:' + action);
+              window.addEventListener('keydown', event => {
+                const fullScreen = document.documentElement?.dataset.prtsDesktopFullscreen === 'true';
+                if (event.key === 'F11') {
+                  event.preventDefault();
+                  event.stopImmediatePropagation();
+                  post('fullscreen:toggle');
+                } else if (event.key === 'Escape' && fullScreen) {
+                  event.preventDefault();
+                  event.stopImmediatePropagation();
+                  post('fullscreen:exit');
+                }
+              }, true);
               const install = () => {
                 if (!document.body || document.getElementById('prts-desktop-chrome')) return;
 
@@ -332,6 +348,7 @@ internal sealed class MainWindow : Form
                 loadingOverlay.Visible = false;
                 HideNativeChrome();
                 SetStatus("PRTS Host 已就绪");
+                _ = SyncPageFullScreenSignalAsync();
                 RequestBackgroundMode(backgroundRequested);
                 return;
             }
@@ -525,6 +542,29 @@ internal sealed class MainWindow : Form
             """);
     }
 
+    private async Task SyncPageFullScreenSignalAsync()
+    {
+        var core = browser.CoreWebView2;
+        if (core is null || !pageReady) return;
+        var value = fullScreen ? "true" : "false";
+        try
+        {
+            await core.ExecuteScriptAsync($$"""
+                (() => {
+                  document.documentElement.dataset.prtsDesktopFullscreen = '{{value}}';
+                  window.dispatchEvent(new CustomEvent('prts-shell-fullscreen', {
+                    detail: { fullscreen: {{value}} }
+                  }));
+                })();
+                """);
+        }
+        catch (Exception error) when (error is COMException or InvalidOperationException
+            or ObjectDisposedException)
+        {
+            log.Write($"WebView fullscreen signal was deferred: {error.Message}");
+        }
+    }
+
     private void LogMemorySnapshot(string reason)
     {
         try
@@ -592,6 +632,22 @@ internal sealed class MainWindow : Form
             try { BeginInvoke(action); } catch (InvalidOperationException) { }
         }
         else action();
+    }
+
+    protected override bool ProcessCmdKey(ref Message message, Keys keyData)
+    {
+        var key = keyData & Keys.KeyCode;
+        if (key == Keys.F11)
+        {
+            ToggleFullScreen();
+            return true;
+        }
+        if (key == Keys.Escape && fullScreen)
+        {
+            ExitFullScreen();
+            return true;
+        }
+        return base.ProcessCmdKey(ref message, keyData);
     }
 
     private static bool IsAllowedLocalUri(string rawUri)
@@ -739,11 +795,15 @@ internal sealed class MainWindow : Form
         };
         drag.MouseDown += (_, args) =>
         {
-            if (args.Button != MouseButtons.Left) return;
+            if (args.Button != MouseButtons.Left || fullScreen) return;
             ReleaseCapture();
             SendMessage(Handle, WmNcLButtonDown, HtCaption, 0);
         };
-        drag.DoubleClick += (_, _) => ToggleMaximize();
+        drag.DoubleClick += (_, _) =>
+        {
+            if (fullScreen) ExitFullScreen();
+            else ToggleMaximize();
+        };
 
         var controls = new FlowLayoutPanel
         {
@@ -815,7 +875,7 @@ internal sealed class MainWindow : Form
                 "se" => HtBottomRight,
                 _ => HtClient,
             };
-            if (hitTest != HtClient && WindowState == FormWindowState.Normal)
+            if (!fullScreen && hitTest != HtClient && WindowState == FormWindowState.Normal)
             {
                 ReleaseCapture();
                 SendMessage(Handle, WmNcLButtonDown, hitTest, 0);
@@ -824,6 +884,12 @@ internal sealed class MainWindow : Form
         }
         switch (action)
         {
+            case "fullscreen:toggle":
+                ToggleFullScreen();
+                break;
+            case "fullscreen:exit":
+                ExitFullScreen();
+                break;
             case "minimize":
                 WindowState = FormWindowState.Minimized;
                 break;
@@ -834,6 +900,7 @@ internal sealed class MainWindow : Form
                 Close();
                 break;
             case "drag":
+                if (fullScreen) break;
                 ReleaseCapture();
                 SendMessage(Handle, WmNcLButtonDown, HtCaption, 0);
                 break;
@@ -842,6 +909,11 @@ internal sealed class MainWindow : Form
 
     private void ToggleMaximize()
     {
+        if (fullScreen)
+        {
+            ExitFullScreen();
+            return;
+        }
         if (WindowState == FormWindowState.Maximized)
         {
             WindowState = FormWindowState.Normal;
@@ -849,6 +921,51 @@ internal sealed class MainWindow : Form
         }
         MaximizedBounds = Screen.FromControl(this).WorkingArea;
         WindowState = FormWindowState.Maximized;
+    }
+
+    private void ToggleFullScreen()
+    {
+        if (fullScreen) ExitFullScreen();
+        else EnterFullScreen();
+    }
+
+    private void EnterFullScreen()
+    {
+        if (fullScreen) return;
+        var screenBounds = Screen.FromControl(this).Bounds;
+        windowStateBeforeFullScreen = WindowState == FormWindowState.Minimized
+            ? FormWindowState.Normal : WindowState;
+        boundsBeforeFullScreen = WindowState == FormWindowState.Normal ? Bounds : RestoreBounds;
+        maximizedBoundsBeforeFullScreen = MaximizedBounds;
+
+        fullScreen = true;
+        SuspendLayout();
+        WindowState = FormWindowState.Normal;
+        MaximizedBounds = Rectangle.Empty;
+        Bounds = screenBounds;
+        ResumeLayout(true);
+        maximizeButton.Text = "❐";
+        ApplyWindowShape();
+        _ = SyncPageFullScreenSignalAsync();
+    }
+
+    private void ExitFullScreen()
+    {
+        if (!fullScreen) return;
+        var previousState = windowStateBeforeFullScreen;
+        var previousBounds = boundsBeforeFullScreen;
+        var previousMaximizedBounds = maximizedBoundsBeforeFullScreen;
+
+        fullScreen = false;
+        SuspendLayout();
+        WindowState = FormWindowState.Normal;
+        MaximizedBounds = previousMaximizedBounds;
+        if (!previousBounds.IsEmpty) Bounds = previousBounds;
+        if (previousState == FormWindowState.Maximized) WindowState = FormWindowState.Maximized;
+        ResumeLayout(true);
+        maximizeButton.Text = WindowState == FormWindowState.Maximized ? "❐" : "□";
+        ApplyWindowShape();
+        _ = SyncPageFullScreenSignalAsync();
     }
 
     private void LayoutWindowChrome()
@@ -891,7 +1008,7 @@ internal sealed class MainWindow : Form
             Region = null;
             oldRegion?.Dispose();
 
-            var cornerPreference = WindowState == FormWindowState.Maximized
+            var cornerPreference = fullScreen || WindowState == FormWindowState.Maximized
                 ? (int)DwmWindowCornerPreference.DoNotRound
                 : (int)DwmWindowCornerPreference.Round;
             _ = DwmSetWindowAttribute(
@@ -910,7 +1027,7 @@ internal sealed class MainWindow : Form
         }
 
         var previousRegion = Region;
-        if (WindowState == FormWindowState.Maximized)
+        if (fullScreen || WindowState == FormWindowState.Maximized)
         {
             Region = null;
         }
@@ -927,7 +1044,7 @@ internal sealed class MainWindow : Form
     protected override void WndProc(ref Message message)
     {
         base.WndProc(ref message);
-        if (message.Msg != WmNcHitTest || WindowState != FormWindowState.Normal
+        if (message.Msg != WmNcHitTest || fullScreen || WindowState != FormWindowState.Normal
             || (int)message.Result != HtClient) return;
 
         var packed = message.LParam.ToInt64();
