@@ -13,7 +13,7 @@
   },
   "plugin": {
     "repository": "HTian-qwq/prts-terrarchive",
-    "ref": "e94ed8b38b2e3667f4217c5f97b78b31f8991a66"
+    "ref": "9cf098d5614cfc6dcbe5ebd9b43c19c4619820ce"
   },
   "corpus": {
     "source": "prts.chat",
