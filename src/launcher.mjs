@@ -1,6 +1,7 @@
 import { appendFileSync, existsSync, mkdirSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { dirname, join, resolve } from 'node:path'
+import { createInterface } from 'node:readline'
 import { fileURLToPath } from 'node:url'
 import {
   parseDshUrl,
@@ -22,7 +23,7 @@ const debugLogPath = join(dataRoot, 'logs', 'launcher-debug.log')
 function debug(message) {
   try {
     mkdirSync(dirname(debugLogPath), { recursive: true })
-    appendFileSync(debugLogPath, `${new Date().toISOString()} [pid ${process.pid}] ${message}\n`)
+    appendFileSync(debugLogPath, `${new Date().toISOString()} [pid ${process.pid}] ${redactToken(message)}\n`)
   } catch {
     // 调试日志失败不影响主流程
   }
@@ -146,14 +147,16 @@ async function start() {
     windowsHide: process.platform === 'win32',
   })
   debug(`spawn returned, child pid=${child.pid} spawnError=${String(child.spawnResult?.error ?? 'none')}`)
-  child.once('error', (error) => debug(`child error event: ${error?.stack ?? error}`))
+  let spawnError = null
+  child.once('error', (error) => {
+    spawnError = error
+    debug(`child error event: ${error?.stack ?? error}`)
+  })
   child.once('exit', (code, signal) => debug(`child exit event: code=${code} signal=${signal}`))
 
   let opened = false
-  const consume = (chunk, output) => {
-    const text = chunk.toString()
-    output.write(text)
-    appendFileSync(logPath, redactToken(text))
+  const consumeLine = (text) => {
+    appendFileSync(logPath, `${redactToken(text)}\n`)
     if (opened) return
     const url = parseDshUrl(text)
     if (!url) return
@@ -166,26 +169,44 @@ async function start() {
     })
     openUrl(url)
   }
-  child.stdout.on('data', (chunk) => consume(chunk, process.stdout))
-  child.stderr.on('data', (chunk) => consume(chunk, process.stderr))
-
-  const shutdown = () => {
-    if (child.exitCode === null) child.kill()
+  // 管道分块可能落在 token 中间；日志和 URL 识别都等完整行，桌面仍接收原始输出。
+  for (const [input, output] of [[child.stdout, process.stdout], [child.stderr, process.stderr]]) {
+    if (!input) continue
+    createInterface({ input, crlfDelay: Infinity }).on('line', consumeLine)
+    input.on('data', (chunk) => output.write(chunk))
   }
+
+  let requestedStop = false
+  const shutdown = () => {
+    requestedStop = true
+    if (child.exitCode === null && child.signalCode === null) child.kill()
+  }
+  let commands = null
   if (process.env.PRTS_DESKTOP === '1') {
-    process.stdin.setEncoding('utf8')
-    process.stdin.on('data', (text) => {
-      if (text.split(/\r?\n/u).some((line) => line.trim() === 'shutdown')) shutdown()
+    commands = createInterface({ input: process.stdin, crlfDelay: Infinity })
+    commands.on('line', (line) => {
+      if (line.trim() === 'shutdown') shutdown()
     })
+    commands.once('close', shutdown)
   }
   process.once('SIGINT', shutdown)
   process.once('SIGTERM', shutdown)
-  child.once('exit', (code, signal) => {
+  child.once('close', (code, signal) => {
+    // 桌面保持 stdin 管道打开；子进程结束后必须释放它，才能将退出通知送给桌面。
+    if (commands) {
+      commands.removeListener('close', shutdown)
+      commands.close()
+      process.stdin.pause()
+      process.stdin.unref?.()
+    }
+    process.removeListener('SIGINT', shutdown)
+    process.removeListener('SIGTERM', shutdown)
     const state = readHostState(statePath)
     if (state?.pid === child.pid) removeHostState(statePath)
-    if (signal) console.log(`\nPRTS Host 已停止（${signal}）。`)
+    if (spawnError) console.error(`\nPRTS Host 启动失败：${redactToken(spawnError.message)}。日志：${logPath}`)
+    else if (signal) console.log(`\nPRTS Host 已停止（${signal}）。`)
     else if (code) console.error(`\nPRTS Host 异常退出，代码 ${code}。日志：${logPath}`)
-    process.exitCode = code || 0
+    process.exitCode = spawnError ? 1 : requestedStop ? 0 : (code ?? 1)
   })
 }
 

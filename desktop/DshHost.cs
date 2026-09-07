@@ -10,12 +10,21 @@ internal sealed partial class DshHost : IAsyncDisposable
     private readonly string dataRoot;
     private readonly DiagnosticLog log;
     private readonly SemaphoreSlim lifecycle = new(1, 1);
-    private Process? process;
-    private NativeJob? job;
-    private bool requestedStop;
+    private sealed class HostProcess(Process process, long generation)
+    {
+        public Process Process { get; } = process;
+        public long Generation { get; } = generation;
+        public NativeJob? Job { get; set; }
+        public int Stopping;
+        public int Exited;
+    }
+
+    private HostProcess? currentHost;
+    private long nextGeneration;
     private bool corpusWarningShown;
 
-    public event Action<Uri>? Ready;
+    public event Action<long, Uri>? Ready;
+    public event Action<long, string>? Failed;
     public event Action<string>? StatusChanged;
     public event Action<string>? Warning;
 
@@ -26,16 +35,22 @@ internal sealed partial class DshHost : IAsyncDisposable
         this.log = log;
     }
 
+    public bool IsCurrentGeneration(long generation) =>
+        Volatile.Read(ref currentHost) is { } current
+        && current.Generation == generation && Volatile.Read(ref current.Stopping) == 0;
+
+    public bool IsRunningGeneration(long generation) =>
+        Volatile.Read(ref currentHost) is { } current
+        && current.Generation == generation && Volatile.Read(ref current.Stopping) == 0
+        && Volatile.Read(ref current.Exited) == 0;
+
     public async Task StartAsync()
     {
         await lifecycle.WaitAsync();
         try
         {
-            if (process is { HasExited: false }) return;
-            process?.Dispose();
-            process = null;
-            job?.Dispose();
-            job = null;
+            if (currentHost is { } running && !running.Process.HasExited) return;
+            DisposeCurrentHost();
             AssertPortableDirectoryWritable();
             WarnIfCorpusUnavailable();
 
@@ -46,7 +61,6 @@ internal sealed partial class DshHost : IAsyncDisposable
                 throw new FileNotFoundException("运行时文件不完整，请重新下载并完整解压发行包。");
             }
 
-            requestedStop = false;
             var startInfo = new ProcessStartInfo
             {
                 FileName = nodePath,
@@ -63,30 +77,29 @@ internal sealed partial class DshHost : IAsyncDisposable
             startInfo.Environment["PRTS_DESKTOP"] = "1";
 
             var nextProcess = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
-            nextProcess.OutputDataReceived += (_, args) => ConsumeOutput(args.Data, isError: false);
-            nextProcess.ErrorDataReceived += (_, args) => ConsumeOutput(args.Data, isError: true);
-            nextProcess.Exited += (_, _) => HandleExit(nextProcess);
+            var next = new HostProcess(nextProcess, Interlocked.Increment(ref nextGeneration));
+            nextProcess.OutputDataReceived += (_, args) => ConsumeOutput(next, args.Data, isError: false);
+            nextProcess.ErrorDataReceived += (_, args) => ConsumeOutput(next, args.Data, isError: true);
+            nextProcess.Exited += (_, _) => HandleExit(next);
+            Volatile.Write(ref currentHost, next);
 
             StatusChanged?.Invoke("正在启动 PRTS Host…");
             log.Write("Starting portable DSH host.");
-            if (!nextProcess.Start()) throw new InvalidOperationException("无法启动内置 Node.js。 ");
-
-            var nextJob = new NativeJob();
             try
             {
-                nextJob.Add(nextProcess);
+                if (!nextProcess.Start()) throw new InvalidOperationException("无法启动内置 Node.js。");
+                next.Job = new NativeJob();
+                next.Job.Add(nextProcess);
+                nextProcess.BeginOutputReadLine();
+                nextProcess.BeginErrorReadLine();
             }
             catch
             {
-                nextJob.Dispose();
-                if (!nextProcess.HasExited) nextProcess.Kill(entireProcessTree: true);
+                Interlocked.Exchange(ref next.Stopping, 1);
+                KillHost(nextProcess);
+                DisposeCurrentHost();
                 throw;
             }
-
-            process = nextProcess;
-            job = nextJob;
-            nextProcess.BeginOutputReadLine();
-            nextProcess.BeginErrorReadLine();
         }
         finally
         {
@@ -94,10 +107,11 @@ internal sealed partial class DshHost : IAsyncDisposable
         }
     }
 
-    public async Task RestartAsync()
+    public async Task RestartAsync(CancellationToken token = default)
     {
         StatusChanged?.Invoke("正在重启 PRTS Host…");
         await StopAsync();
+        token.ThrowIfCancellationRequested();
         await StartAsync();
     }
 
@@ -106,38 +120,33 @@ internal sealed partial class DshHost : IAsyncDisposable
         await lifecycle.WaitAsync();
         try
         {
-            requestedStop = true;
-            var current = process;
-            if (current is null)
+            var current = currentHost;
+            if (current is null) return;
+            Interlocked.Exchange(ref current.Stopping, 1);
+            try
             {
-                job?.Dispose();
-                job = null;
-                return;
-            }
-
-            if (!current.HasExited)
-            {
-                try
+                if (!current.Process.HasExited)
                 {
-                    await current.StandardInput.WriteLineAsync("shutdown");
-                    await current.StandardInput.FlushAsync();
-                    using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-                    await current.WaitForExitAsync(timeout.Token);
-                }
-                catch (OperationCanceledException)
-                {
-                    if (!current.HasExited) current.Kill(entireProcessTree: true);
-                }
-                catch (InvalidOperationException)
-                {
-                    // The process exited while the shutdown request was being sent.
+                    try
+                    {
+                        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                        await current.Process.StandardInput.WriteLineAsync("shutdown").WaitAsync(timeout.Token);
+                        await current.Process.StandardInput.FlushAsync().WaitAsync(timeout.Token);
+                        await current.Process.WaitForExitAsync(timeout.Token);
+                    }
+                    catch (Exception error) when (error is OperationCanceledException or IOException
+                        or InvalidOperationException)
+                    {
+                        // A closed stdin must not prevent process/job cleanup or a later retry.
+                        log.Write($"Graceful host shutdown unavailable: {error.Message}");
+                        KillHost(current.Process);
+                    }
                 }
             }
-
-            process = null;
-            job?.Dispose();
-            job = null;
-            current.Dispose();
+            finally
+            {
+                DisposeCurrentHost();
+            }
             log.Write("Portable DSH host stopped.");
         }
         finally
@@ -146,9 +155,27 @@ internal sealed partial class DshHost : IAsyncDisposable
         }
     }
 
+    private void KillHost(Process process)
+    {
+        try { if (!process.HasExited) process.Kill(entireProcessTree: true); }
+        catch (Exception error) when (error is InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+            log.Write($"Host termination raced with exit: {error.Message}");
+        }
+    }
+
+    private void DisposeCurrentHost()
+    {
+        var old = Interlocked.Exchange(ref currentHost, null);
+        if (old is null) return;
+        Interlocked.Exchange(ref old.Stopping, 1);
+        try { old.Job?.Dispose(); }
+        finally { old.Process.Dispose(); }
+    }
+
     public string MemorySnapshot()
     {
-        var current = process;
+        var current = Volatile.Read(ref currentHost)?.Process;
         if (current is null) return "node=stopped";
         try
         {
@@ -222,24 +249,28 @@ internal sealed partial class DshHost : IAsyncDisposable
         Warning?.Invoke($"{message}\n\n请确认发行包已完整解压且 corpus 目录仍在；程序启动后也可以前往“设置 → 插件 → PRTS 语料”重新下载或检查配置。");
     }
 
-    private void ConsumeOutput(string? line, bool isError)
+    private void ConsumeOutput(HostProcess source, string? line, bool isError)
     {
         if (string.IsNullOrWhiteSpace(line)) return;
         log.Write($"DSH{(isError ? " stderr" : string.Empty)}: {line}");
+        if (!IsCurrentGeneration(source.Generation) || Volatile.Read(ref source.Exited) != 0) return;
         var match = HostUrlPattern().Match(line);
         if (!match.Success || !Uri.TryCreate(match.Value, UriKind.Absolute, out var uri)) return;
         StatusChanged?.Invoke("PRTS Host 已就绪");
-        Ready?.Invoke(uri);
+        Ready?.Invoke(source.Generation, uri);
     }
 
-    private void HandleExit(Process exitedProcess)
+    private void HandleExit(HostProcess source)
     {
+        Interlocked.Exchange(ref source.Exited, 1);
         int? exitCode = null;
-        try { exitCode = exitedProcess.ExitCode; } catch (InvalidOperationException) { }
+        try { exitCode = source.Process.ExitCode; } catch (InvalidOperationException) { }
         log.Write($"Portable DSH host exited with code {exitCode?.ToString() ?? "unknown"}.");
-        if (!requestedStop)
+        if (IsCurrentGeneration(source.Generation))
         {
-            StatusChanged?.Invoke($"PRTS Host 已停止（退出码 {exitCode?.ToString() ?? "未知"}）");
+            var message = $"PRTS Host 已停止（退出码 {exitCode?.ToString() ?? "未知"}）。可以重试启动；详细信息见 userdata\\logs\\desktop.log。";
+            StatusChanged?.Invoke(message);
+            Failed?.Invoke(source.Generation, message);
         }
     }
 

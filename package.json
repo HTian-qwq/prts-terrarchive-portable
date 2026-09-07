@@ -9,7 +9,7 @@
     "node": ">=22.19"
   },
   "scripts": {
-    "check": "node --check src/portable.mjs && node --check src/launcher.mjs && node --check scripts/windows-pe.mjs && node --check scripts/audit-windows-artifact.mjs && node --check scripts/fetch-current-corpus.mjs && node --check scripts/prepare-dsh-workspace.mjs && node --check scripts/complete-dsh-workspace-closure.mjs && node --check scripts/assemble.mjs && node --check scripts/smoke-artifact.mjs",
+    "check": "node --check src/portable.mjs && node --check src/launcher.mjs && node --check scripts/windows-pe.mjs && node --check scripts/audit-windows-artifact.mjs && node --check scripts/fetch-current-corpus.mjs && node --check scripts/corpus-artifact.mjs && node --check scripts/prepare-dsh-workspace.mjs && node --check scripts/complete-dsh-workspace-closure.mjs && node --check scripts/assemble.mjs && node --check scripts/smoke-artifact.mjs",
     "test": "node --test test/*.test.js"
   }
 }

@@ -12,8 +12,9 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { basename, dirname, join, relative, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { assertWindowsX64Executable } from './windows-pe.mjs'
+import { packageCurrentCorpus } from './corpus-artifact.mjs'
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const versions = JSON.parse(readFileSync(join(repositoryRoot, 'versions.json'), 'utf8'))
@@ -113,10 +114,11 @@ cpSync(args['node-dir'], join(args.out, 'runtime', 'node'), {
   recursive: true,
   dereference: true,
 })
-mkdirSync(join(args.out, 'corpus'), { recursive: true })
-cpSync(args['corpus-releases'], join(args.out, 'corpus', 'releases'), {
-  recursive: true,
-  dereference: true,
+const corpusInstaller = await import(pathToFileURL(join(args.plugin, 'src', 'installer.js')).href)
+const { manifest: corpusManifest } = await packageCurrentCorpus({
+  releasesDir: args['corpus-releases'],
+  targetDir: join(args.out, 'corpus', 'releases'),
+  installer: corpusInstaller,
 })
 mkdirSync(join(args.out, 'app'), { recursive: true })
 for (const file of ['portable.mjs', 'launcher.mjs']) {
@@ -195,11 +197,6 @@ writeFileSync(join(licensesDir, 'NOTICE.txt'), [
   'not licensed under MIT. See prts-terrarchive-GAME_ASSETS.md for the exact boundary.',
   '',
 ].join('\n'))
-
-const corpusPointer = JSON.parse(readFileSync(join(
-  args['corpus-releases'], 'current.json'), 'utf8'))
-const corpusManifest = JSON.parse(readFileSync(join(
-  args['corpus-releases'], corpusPointer.release_id, 'release-manifest.json'), 'utf8'))
 
 writeFileSync(join(args.out, 'release-manifest.json'), `${JSON.stringify({
   portableVersion: versions.portable,

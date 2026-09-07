@@ -16,6 +16,9 @@ const REQUIRED_PACK_IDS = Object.freeze([
   'entities',
   'references',
 ])
+// 保留同一次可信 HTTP 响应的字节，供插件自己的校验器签发安装快照。
+// 不重新请求可变 current，也不把普通 portable 元数据对象当作插件可信句柄。
+const currentPayloads = new WeakMap()
 
 function parseArgs(argv) {
   const values = {}
@@ -129,7 +132,7 @@ export async function resolveTrustedCurrentRelease({ fetchImpl = fetch } = {}) {
   for (const packId of REQUIRED_PACK_IDS) {
     if (!packVersions.has(packId)) throw new Error(`PRTS.chat current 缺少必需 pack：${packId}`)
   }
-  return {
+  const current = {
     releaseId,
     dataVersion,
     minimumAgentVersion,
@@ -137,6 +140,8 @@ export async function resolveTrustedCurrentRelease({ fetchImpl = fetch } = {}) {
     documentCount: data.document_count,
     packVersions,
   }
+  currentPayloads.set(current, text)
+  return current
 }
 
 export async function fetchCurrentCorpus(args, { fetchImpl = fetch } = {}) {
@@ -160,15 +165,26 @@ export async function fetchCurrentCorpus(args, { fetchImpl = fetch } = {}) {
   }
   // Importing and invoking the downloader happens only after the compatibility
   // gate, so an incompatible build fails before any corpus asset transfer starts.
-  const { ensureCorpusRelease, validateLocalRelease } =
+  const { ensureCorpusRelease, validateLocalRelease,
+    resolveTrustedCurrentRelease: resolveInstallerCurrent } =
     await import(pathToFileURL(installerPath).href)
-  if (typeof ensureCorpusRelease !== 'function' || typeof validateLocalRelease !== 'function') {
+  if (typeof ensureCorpusRelease !== 'function' || typeof validateLocalRelease !== 'function'
+      || typeof resolveInstallerCurrent !== 'function') {
     throw new Error('插件下载器缺少资料安装或校验接口')
   }
+  const trustedCurrent = await resolveInstallerCurrent({
+    fetchImpl: async (url) => {
+      if (String(url) !== TRUSTED_CURRENT_URL) throw new Error('插件快照请求了非 current 地址')
+      return new Response(currentPayloads.get(current), {
+        headers: { 'Content-Type': 'application/json' },
+      })
+    },
+  })
   let lastReportedFiles = -50
   const result = await ensureCorpusRelease({
     releasesDir: args.out,
     releaseId: current.releaseId,
+    trustedCurrent,
     // PRTS.chat current 决定唯一可信版本；ModelScope 只提供由该清单哈希约束的
     // 分仓字节，缺失或失败时再回退站点，不从镜像目录名猜测“最新版”。
     order: ['modelscope', 'site'],

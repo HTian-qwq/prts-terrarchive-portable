@@ -151,7 +151,7 @@ export function syncManagedInstall({ appRoot, dataRoot }) {
   const debug = (message) => {
     try {
       mkdirSync(dirname(debugPath), { recursive: true })
-      appendFileSync(debugPath, `${new Date().toISOString()} [pid ${process.pid}] sync: ${message}\n`)
+      appendFileSync(debugPath, `${new Date().toISOString()} [pid ${process.pid}] sync: ${redactToken(message)}\n`)
     } catch {
       // 调试日志失败不影响主流程
     }

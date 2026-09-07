@@ -68,6 +68,7 @@ jobs:
       - name: Check portable builder and plugin
         shell: pwsh
         run: |
+          $PSNativeCommandUseErrorActionPreference = $true
           npm run check
           npm test
           Push-Location .build/plugin
@@ -85,6 +86,7 @@ jobs:
         working-directory: .build/dsh
         shell: pwsh
         run: |
+          $PSNativeCommandUseErrorActionPreference = $true
           pnpm install --frozen-lockfile
           pnpm run build:official
 
@@ -96,6 +98,7 @@ jobs:
         working-directory: .build/dsh
         shell: pwsh
         run: |
+          $PSNativeCommandUseErrorActionPreference = $true
           try {
             pnpm --config.node-linker=hoisted --config.inject-workspace-packages=true --filter dsh-python-runtime-closure --prod deploy --frozen-lockfile "$env:GITHUB_WORKSPACE/.build/dsh-deploy"
           } finally {
@@ -125,6 +128,7 @@ jobs:
       - name: Publish desktop executable
         shell: pwsh
         run: |
+          $PSNativeCommandUseErrorActionPreference = $true
           dotnet restore desktop/PrtsTerrarchive.Desktop.csproj `
             -r win-x64 `
             --locked-mode

@@ -12,7 +12,7 @@ internal sealed class MainWindow : Form
     private readonly DshHost host;
     private readonly DiagnosticLog log;
     private readonly Func<Task> requestExit;
-    private readonly WebView2 browser = new() { Dock = DockStyle.Fill, Visible = false };
+    private WebView2 browser = new() { Dock = DockStyle.Fill, Visible = false };
     private readonly Panel loadingOverlay;
     private readonly Label loadingMessage;
     private readonly Label loadingDetail;
@@ -25,6 +25,8 @@ internal sealed class MainWindow : Form
     private readonly ToolStripMenuItem restartMenuItem;
     private readonly System.Windows.Forms.Timer memoryTimer = new() { Interval = 120_000 };
     private readonly SemaphoreSlim browserStateGate = new(1, 1);
+    private readonly DesktopRecovery recovery = new();
+    private bool hostAvailable;
     private CoreWebView2Environment? browserEnvironment;
     private bool allowClose;
     private bool started;
@@ -99,7 +101,19 @@ internal sealed class MainWindow : Form
         };
         trayIcon.DoubleClick += (_, _) => RestoreFromTray();
 
-        host.Ready += uri => RunOnUiThread(() => NavigateToHost(uri));
+        host.Ready += (generation, uri) => RunOnUiThread(() =>
+        {
+            if (!host.IsRunningGeneration(generation) || recovery.IsStopping) return;
+            hostAvailable = true;
+            NavigateToHost(uri);
+        });
+        host.Failed += (generation, message) => RunOnUiThread(() =>
+        {
+            if (!host.IsCurrentGeneration(generation) || recovery.IsStopping) return;
+            hostAvailable = false;
+            hostUri = null;
+            ShowLoadingFailure("本地服务已停止", message);
+        });
         host.StatusChanged += message => RunOnUiThread(() => SetStatus(message));
         host.Warning += message => RunOnUiThread(() => MessageBox.Show(this, message,
             "语料需要处理", MessageBoxButtons.OK, MessageBoxIcon.Warning));
@@ -127,32 +141,33 @@ internal sealed class MainWindow : Form
     {
         if (started) return;
         started = true;
-        try
-        {
-            await InitializeBrowserAsync();
-            await host.StartAsync();
-        }
-        catch (Exception error)
-        {
-            log.Write($"Desktop startup failed: {error}");
-            ShowLoadingFailure("桌面环境启动失败", error.Message);
-            MessageBox.Show(
-                this,
-                $"PRTS Terrarchive 启动失败：\n\n{error.Message}\n\n详细信息已写入 userdata\\logs\\desktop.log。",
-                "启动失败",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Error);
-        }
+        await RecoverAsync(restartHost: false);
     }
 
-    private async Task InitializeBrowserAsync()
+    private bool IsCurrentBrowser(WebView2 candidate) =>
+        ReferenceEquals(browser, candidate) && !candidate.IsDisposed && !IsDisposed && !recovery.IsStopping;
+
+    private async Task InitializeBrowserAsync(CancellationToken token)
     {
+        token.ThrowIfCancellationRequested();
+        var old = browser;
+        var candidate = new WebView2 { Dock = DockStyle.Fill, Visible = false };
+        browser = candidate;
+        Controls.Remove(old);
+        old.Dispose();
+        Controls.Add(candidate);
+        candidate.SendToBack();
+        pageReady = false;
+        backgroundApplied = false;
         var webViewData = Path.Combine(appRoot, "userdata", "webview2");
         Directory.CreateDirectory(webViewData);
         try
         {
-            browserEnvironment = await CoreWebView2Environment.CreateAsync(null, webViewData);
-            await browser.EnsureCoreWebView2Async(browserEnvironment);
+            var environment = await CoreWebView2Environment.CreateAsync(null, webViewData).WaitAsync(token);
+            token.ThrowIfCancellationRequested();
+            await candidate.EnsureCoreWebView2Async(environment).WaitAsync(token);
+            token.ThrowIfCancellationRequested();
+            browserEnvironment = environment;
         }
         catch (WebView2RuntimeNotFoundException error)
         {
@@ -161,12 +176,21 @@ internal sealed class MainWindow : Form
                 error);
         }
 
-        browser.CoreWebView2.Settings.AreDefaultContextMenusEnabled = true;
-        browser.CoreWebView2.Settings.AreDevToolsEnabled = false;
-        browser.CoreWebView2.Settings.IsStatusBarEnabled = false;
-        browser.CoreWebView2.Settings.IsZoomControlEnabled = true;
-        browser.CoreWebView2.Settings.AreBrowserAcceleratorKeysEnabled = true;
-        await browser.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync("""
+        var core = candidate.CoreWebView2;
+        core.ProcessFailed += (_, args) => RunOnUiThread(() =>
+        {
+            if (!IsCurrentBrowser(candidate)) return;
+            if (args.ProcessFailedKind == CoreWebView2ProcessFailedKind.BrowserProcessExited)
+                recovery.InvalidateBrowser();
+            log.Write($"WebView process failed: {args.ProcessFailedKind}");
+            ShowLoadingFailure("页面进程意外停止", "可以重试加载，或暂时在系统浏览器中打开。");
+        });
+        core.Settings.AreDefaultContextMenusEnabled = true;
+        core.Settings.AreDevToolsEnabled = false;
+        core.Settings.IsStatusBarEnabled = false;
+        core.Settings.IsZoomControlEnabled = true;
+        core.Settings.AreBrowserAcceleratorKeysEnabled = true;
+        await core.AddScriptToExecuteOnDocumentCreatedAsync("""
             (() => {
               if (window !== window.top) return;
               const post = action => window.chrome.webview.postMessage('prts-shell-action:' + action);
@@ -307,18 +331,23 @@ internal sealed class MainWindow : Form
               if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', install, { once: true });
               else install();
             })();
-            """);
-        browser.CoreWebView2.WebMessageReceived += (_, args) =>
+            """).WaitAsync(token);
+        token.ThrowIfCancellationRequested();
+        core.WebMessageReceived += (_, args) =>
         {
             string message;
             try { message = args.TryGetWebMessageAsString(); }
             catch (ArgumentException) { return; }
             const string prefix = "prts-shell-action:";
             if (!message.StartsWith(prefix, StringComparison.Ordinal)) return;
-            RunOnUiThread(() => HandleShellAction(message[prefix.Length..]));
+            RunOnUiThread(() =>
+            {
+                if (IsCurrentBrowser(candidate)) HandleShellAction(message[prefix.Length..]);
+            });
         };
-        browser.CoreWebView2.NavigationStarting += (_, args) =>
+        core.NavigationStarting += (_, args) =>
         {
+            if (!IsCurrentBrowser(candidate)) { args.Cancel = true; return; }
             if (IsAllowedLocalUri(args.Uri) || args.Uri == "about:blank")
             {
                 pageReady = false;
@@ -330,21 +359,23 @@ internal sealed class MainWindow : Form
             args.Cancel = true;
             OpenExternalUri(args.Uri);
         };
-        browser.CoreWebView2.NewWindowRequested += (_, args) =>
+        core.NewWindowRequested += (_, args) =>
         {
             args.Handled = true;
+            if (!IsCurrentBrowser(candidate)) return;
             if (IsAllowedLocalUri(args.Uri))
             {
-                browser.CoreWebView2.Navigate(args.Uri);
+                core.Navigate(args.Uri);
             }
             else OpenExternalUri(args.Uri);
         };
-        browser.CoreWebView2.NavigationCompleted += (_, args) =>
+        core.NavigationCompleted += (_, args) =>
         {
+            if (!IsCurrentBrowser(candidate) || !recovery.BrowserReady || !hostAvailable || hostUri is null) return;
             if (args.IsSuccess)
             {
                 pageReady = true;
-                browser.Visible = !backgroundRequested;
+                candidate.Visible = !backgroundRequested;
                 loadingOverlay.Visible = false;
                 HideNativeChrome();
                 SetStatus("PRTS Host 已就绪");
@@ -356,18 +387,13 @@ internal sealed class MainWindow : Form
             log.Write($"WebView navigation failed: {args.WebErrorStatus}");
             ShowLoadingFailure("本地页面加载失败", $"WebView2：{args.WebErrorStatus}");
         };
-        browser.CoreWebView2.ProcessFailed += (_, args) => RunOnUiThread(() =>
-        {
-            log.Write($"WebView process failed: {args.ProcessFailedKind}");
-            ShowLoadingFailure("页面进程意外停止", "可以重试加载，或暂时在系统浏览器中打开。");
-        });
         RequestBackgroundMode(backgroundRequested);
     }
 
     private void NavigateToHost(Uri uri)
     {
-        if (browser.CoreWebView2 is null) return;
         hostUri = uri;
+        if (!recovery.BrowserReady || browser.CoreWebView2 is null) return;
         pageReady = false;
         loadingOverlay.Visible = true;
         loadingOverlay.BringToFront();
@@ -377,19 +403,20 @@ internal sealed class MainWindow : Form
         openBrowserButton.Visible = false;
         loadingMessage.Text = "正在连接本地档案终端";
         loadingDetail.Text = "PRTS Host 已启动，正在载入界面…";
-        browser.CoreWebView2.Navigate(uri.AbsoluteUri);
-        SetStatus("正在载入 PRTS 界面…");
+        try
+        {
+            browser.CoreWebView2.Navigate(uri.AbsoluteUri);
+            SetStatus("正在载入 PRTS 界面…");
+        }
+        catch (Exception error) when (error is COMException or InvalidOperationException)
+        {
+            recovery.InvalidateBrowser();
+            log.Write($"WebView navigation unavailable: {error}");
+            ShowLoadingFailure("页面进程不可用", "可以重试加载，或暂时在系统浏览器中打开。");
+        }
     }
 
-    private void RetryNavigation()
-    {
-        if (hostUri is null)
-        {
-            _ = RestartHostAsync();
-            return;
-        }
-        NavigateToHost(hostUri);
-    }
+    private void RetryNavigation() => _ = RecoverAsync(restartHost: false);
 
     private void SetStatus(string message)
     {
@@ -409,31 +436,51 @@ internal sealed class MainWindow : Form
         openBrowserButton.Visible = hostUri is not null;
     }
 
-    private async Task RestartHostAsync()
+    private Task RestartHostAsync() => RecoverAsync(restartHost: true);
+
+    private async Task RecoverAsync(bool restartHost)
     {
+        if (recovery.IsStopping) return;
         restartMenuItem.Enabled = false;
+        retryButton.Enabled = false;
         try
         {
-            hostUri = null;
-            browser.Visible = false;
-            loadingOverlay.Visible = true;
-            loadingOverlay.BringToFront();
-            ShowNativeChrome();
-            retryButton.Visible = false;
-            openBrowserButton.Visible = false;
-            loadingMessage.Text = "正在重启本地服务";
-            SetStatus("正在重启 PRTS Host…");
-            await host.RestartAsync();
+            await recovery.RunAsync(InitializeBrowserAsync, async token =>
+            {
+                token.ThrowIfCancellationRequested();
+                if (!restartHost && hostAvailable && hostUri is not null)
+                {
+                    NavigateToHost(hostUri);
+                    return;
+                }
+                hostAvailable = false;
+                hostUri = null;
+                pageReady = false;
+                browser.Visible = false;
+                loadingOverlay.Visible = true;
+                loadingOverlay.BringToFront();
+                ShowNativeChrome();
+                retryButton.Visible = false;
+                openBrowserButton.Visible = false;
+                loadingMessage.Text = "正在启动本地服务";
+                SetStatus("正在启动 PRTS Host…");
+                await host.RestartAsync(token);
+            });
         }
+        catch (OperationCanceledException) when (recovery.IsStopping) { }
         catch (Exception error)
         {
-            log.Write($"Host restart failed: {error}");
-            ShowLoadingFailure("本地服务重启失败", error.Message);
-            MessageBox.Show(this, error.Message, "重启失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            if (recovery.IsStopping || IsDisposed) return;
+            log.Write($"Desktop recovery failed: {error}");
+            ShowLoadingFailure("桌面环境启动失败", error.Message);
         }
         finally
         {
-            restartMenuItem.Enabled = true;
+            if (!recovery.IsStopping && !IsDisposed)
+            {
+                restartMenuItem.Enabled = true;
+                retryButton.Enabled = true;
+            }
         }
     }
 
@@ -476,6 +523,7 @@ internal sealed class MainWindow : Form
 
     private void RequestBackgroundMode(bool background)
     {
+        if (recovery.IsStopping) return;
         var needsTransition = backgroundRequested != background || backgroundApplied != background;
         backgroundRequested = background;
         // TrySuspendAsync 要求 Controller.IsVisible=false；先同步隐藏控件，避免
@@ -493,14 +541,17 @@ internal sealed class MainWindow : Form
             while (backgroundApplied != backgroundRequested)
             {
                 var background = backgroundRequested;
-                var core = browser.CoreWebView2;
+                var candidate = browser;
+                if (!IsCurrentBrowser(candidate)) return;
+                var core = candidate.CoreWebView2;
                 if (core is null) return;
                 try
                 {
                     if (background)
                     {
                         await SetPageBackgroundSignalAsync(core, true);
-                        browser.Visible = false;
+                        if (!IsCurrentBrowser(candidate)) return;
+                        candidate.Visible = false;
                         var suspended = await core.TrySuspendAsync();
                         log.Write($"WebView background mode entered (suspended={suspended}).");
                     }
@@ -508,7 +559,8 @@ internal sealed class MainWindow : Form
                     {
                         if (core.IsSuspended) core.Resume();
                         await SetPageBackgroundSignalAsync(core, false);
-                        browser.Visible = pageReady;
+                        if (!IsCurrentBrowser(candidate)) return;
+                        candidate.Visible = pageReady;
                         log.Write("WebView background mode exited.");
                     }
                 }
@@ -518,7 +570,9 @@ internal sealed class MainWindow : Form
                     // 页面正在导航或窗口正在退出时，脚本/挂起请求可能失效；下一次
                     // Resize、NavigationCompleted 或托盘恢复会重新同步目标状态。
                     log.Write($"WebView background transition was deferred: {error.Message}");
+                    return;
                 }
+                if (!IsCurrentBrowser(candidate)) return;
                 backgroundApplied = background;
                 LogMemorySnapshot(background ? "background" : "foreground");
             }
@@ -607,7 +661,7 @@ internal sealed class MainWindow : Form
     {
         restartMenuItem.Enabled = false;
         memoryTimer.Stop();
-        await host.DisposeAsync();
+        await recovery.StopAsync(() => host.DisposeAsync().AsTask());
         allowClose = true;
         trayIcon.Visible = false;
         Close();
@@ -617,6 +671,7 @@ internal sealed class MainWindow : Form
     {
         if (disposing)
         {
+            recovery.Cancel();
             memoryTimer.Dispose();
             trayIcon.Dispose();
             browser.Dispose();
@@ -629,9 +684,10 @@ internal sealed class MainWindow : Form
         if (IsDisposed) return;
         if (InvokeRequired)
         {
-            try { BeginInvoke(action); } catch (InvalidOperationException) { }
+            try { BeginInvoke(() => { if (!IsDisposed && !recovery.IsStopping) action(); }); }
+            catch (InvalidOperationException) { }
         }
-        else action();
+        else if (!recovery.IsStopping) action();
     }
 
     protected override bool ProcessCmdKey(ref Message message, Keys keyData)
