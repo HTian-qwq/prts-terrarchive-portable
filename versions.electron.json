@@ -1,0 +1,21 @@
+{
+  "portable": "0.2.0-alpha.1",
+  "node": "24.17.0",
+  "pnpm": "11.7.0",
+  "electron": "44.0.0",
+  "dsh": {
+    "tag": "dsh-v0.1.5-alpha.1",
+    "version": "0.1.5-alpha.1",
+    "commit": "5dda764ed3aa172535a7967b06ff95d9cbfe536a"
+  },
+  "plugin": {
+    "name": "prts-terrarchive",
+    "minimumVersion": "0.1.0"
+  },
+  "appId": "chat.prts.terrarchive.portable",
+  "productName": "PRTS Terrarchive",
+  "corpus": {
+    "source": "prts.chat",
+    "track": "current"
+  }
+}

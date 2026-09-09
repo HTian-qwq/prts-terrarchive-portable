@@ -1,12 +1,80 @@
 # PRTS Terrarchive Portable
 
-面向普通用户的 PRTS Terrarchive Windows 桌面便携发行版构建器。成品内置自包含桌面程序、
-Node.js、固定版本 DeepSeek Harness 和 `prts-terrarchive`，用户完整解压后只需双击
-`PRTS Terrarchive.exe`，不需要安装 Node、pnpm、.NET 或执行命令。
+面向普通用户的 PRTS Terrarchive Windows 桌面便携发行版构建器。成品内置桌面客户端、
+Node.js、固定版本 DeepSeek Harness、`prts-terrarchive`、PRTS 预设和完整语料。
+用户完整解压后双击 `PRTS Terrarchive.exe`，配置模型即可使用。
 
 > 独立社区项目，与深度求索、鹰角网络及其关联方不存在隶属、合作、授权或背书关系。
 
-## 当前范围
+## 官方 Electron 客户端便携版
+
+新增构建入口使用 DeepSeek Harness 官方 Electron 源码作为桌面客户端，沿用本项目的插件、
+预设和完整语料打包方式。原 WebView2 客户端及其构建脚本继续保留。
+
+| 构建入口 | 桌面客户端 | DSH | 完整语料 |
+| --- | --- | --- | --- |
+| `build-electron.ps1` | 官方 Electron 源码，社区便携封装 | `0.1.5-alpha.1` | 随包提供 |
+| `build-local.ps1` | 原 WinForms / WebView2 | `0.1.3-alpha.1` | 随包提供 |
+
+Electron 版保留官方窗口、原生目录选择器、插件管理器和 Host 通信实现。便携封装把
+Harness 会话、设置、凭据及 Electron 浏览器数据放在 EXE 旁的 `userdata/`，首次默认
+使用 PRTS 模式与 PRTS Agent 皮肤。既有用户的模式和皮肤选择会保留。
+Windows 上关闭最后一个窗口会按官方客户端的行为退出应用。
+
+语料仍从 PRTS.chat `current` 选择，逐文件校验后放入 `corpus/releases/`。发行包只包含
+选定版本清单中的资产，不会带入构建缓存里的整套历史语料。安装插件不需要用户访问 npm；
+首次启动会从包内文件准备本地运行环境。后续语料更新仍可在“插件 → PRTS 语料”中完成。
+
+这是社区构建的便携 ZIP，不使用深度求索的桌面自动更新源，也不需要官方签名或上传凭据。
+桌面程序更新通过下载新版完整 ZIP 完成；已有 `userdata/` 不应作为发行内容分享或覆盖。
+新入口生成独立的 Electron 成品目录；若构建输出中已有用户数据，构建器保留该目录，
+另行生成新的 ZIP 和暂存目录。
+
+### 在 Windows 构建 Electron 版
+
+在现有工具目录布局下运行：
+
+```powershell
+cd D:\ds\prts-terrarchive-portable
+.\build-electron.ps1
+```
+
+需要 Windows x64、Node.js 22.19+（或 24+）、Corepack、Git、Windows `tar.exe`，以及
+Visual Studio Build Tools 的 Desktop development with C++ 工作负载和 Windows SDK。
+Electron 构建不使用 .NET SDK 或 WebView2。内置运行时由官方准备流程下载并校验；
+[`versions.electron.json`](versions.electron.json) 固定 DSH 源码提交、Node、pnpm 和 Electron 版本。
+本地插件源码必须包含新的 Electron 传输和预设注册支持。
+
+```powershell
+.\build-electron.ps1 -ToolsRoot D:\toolchains -PluginPath D:\src\prts-terrarchive
+# 已完成一次构建后，复用准备好的官方运行时与安装材料：
+.\build-electron.ps1 -SkipDshBuild
+```
+
+构建器使用独立 `.build/dsh-electron` 源码副本，应用本项目维护的便携适配，运行官方
+构建、打包和离线安装校验，加入本地 PRTS 包，再生成未签名的 Electron 应用目录。
+组装后检查 Windows PE 架构、安装文件完整性和语料，并通过官方 Desktop Host 创建
+空 PRTS 会话进行冒烟测试；测试不调用模型。验证失败不会生成正式 ZIP。
+`-SkipSmoke` 只用于排查构建环境问题，正常发行应运行默认检查。
+
+```text
+dist/PRTS-Terrarchive-Electron-windows-x64/
+├─ PRTS Terrarchive.exe
+├─ resources/
+│  ├─ app.asar               # 官方 Electron 客户端及便携启动入口
+│  ├─ runtime/               # 内置 Node.js 和 pnpm
+│  └─ seed/                  # 离线安装材料，包含 PRTS 插件
+├─ corpus/releases/          # 完整、已校验的当前语料
+├─ userdata/                 # 用户运行后创建，不进入 ZIP
+├─ LICENSES/
+├─ 使用说明.txt
+└─ release-manifest.json
+```
+
+同时生成同名 `.zip` 和 `.zip.sha256`。完整 Windows 应用需在 Windows 上构建并验收；
+Linux 上的脚本、安装合并和语料回归检查不能替代 Electron 实机测试。
+
+## 原 WebView2 版的范围
 
 - Windows 10/11 x64 ZIP
 - 使用 DSH `0.1.3-alpha.1` 官方 tag（不额外固定 commit）
@@ -23,7 +91,7 @@ Node.js、固定版本 DeepSeek Harness 和 `prts-terrarchive`，用户完整解
 或局域网开放。程序版本、DSH 版本和插件版本分别记录在 `release-manifest.json`，便于复现
 和回滚。
 
-## 用户使用
+## 原 WebView2 版用户使用
 
 1. 从 Releases 下载 Windows ZIP 及对应 `.sha256`。
 2. 校验 SHA-256 后完整解压。
@@ -42,7 +110,7 @@ Host 启动失败或意外退出时，桌面会显示错误和重试入口。Web
 修复运行环境后重试；浏览器进程崩溃时会重建 WebView2 再加载页面。退出 Host 会同时
 结束 Node 启动器；本地访问 token 在 Host、桌面和启动器调试日志中均隐藏。
 
-## 发行结构
+## 原 WebView2 版发行结构
 
 ```text
 PRTS-Terrarchive-Portable-windows-x64/
@@ -64,7 +132,7 @@ PRTS-Terrarchive-Portable-windows-x64/
 启动时只同步发行版负责管理的 `prts-terrarchive` 包和 `prts` preset。已有的第三方 profile
 dependency、bundle 和 `cordis.patch.yml` 会保留，用户会话目录不会被覆盖。
 
-## 本地构建与发布
+## 原 WebView2 版本地构建与发布
 
 当前正式成品在 Windows x64 开发机本地构建，不依赖 GitHub Actions。建议目录如下：
 
