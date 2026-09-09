@@ -16,8 +16,11 @@ Node.js、固定版本 DeepSeek Harness、`prts-terrarchive`、PRTS 预设和完
 | `build-electron.ps1` | 官方 Electron 源码，社区便携封装 | `0.1.5-alpha.1` | 随包提供 |
 | `build-local.ps1` | 原 WinForms / WebView2 | `0.1.3-alpha.1` | 随包提供 |
 
-Electron 版保留官方窗口、原生目录选择器、插件管理器和 Host 通信实现。便携封装把
-Harness 会话、设置、凭据及 Electron 浏览器数据放在 EXE 旁的 `userdata/`，首次默认
+Electron 版沿用旧便携版的无边框窗口设计：PRTS Agent 使用浅色半透明圆角控制栏，
+Endfield AIC 使用黑底荧光黄切角控制栏，随皮肤选择即时切换。右上角应用菜单保留官方
+插件管理入口，也可按 `Ctrl+,` 打开；顶部可拖动窗口，方框按钮最大化或还原，
+`F11` 切换全屏，`Esc` 退出全屏。原生目录选择器、插件管理器和 Host 通信沿用官方实现。
+便携封装把 Harness 会话、设置、凭据及 Electron 浏览器数据放在 EXE 旁的 `userdata/`，首次默认
 使用 PRTS 模式与 PRTS Agent 皮肤。既有用户的模式和皮肤选择会保留。
 Windows 上关闭最后一个窗口会按官方客户端的行为退出应用。
 

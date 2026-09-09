@@ -61,7 +61,7 @@ test('Desktop overlay refuses the upstream working tree', () => {
 })
 
 integration('Pinned Desktop source overlays are exact and idempotent', () => {
-  for (const file of ['src/project-manager.ts', 'src/core-package-set.ts', 'scripts/prepare-runtime.ts']) {
+  for (const file of ['src/main.ts', 'src/preload-app.ts', 'src/project-manager.ts', 'src/core-package-set.ts', 'scripts/prepare-runtime.ts']) {
     const original = readFileSync(join(dsh, 'apps/desktop', file), 'utf8')
     const once = overlaySource(file, original)
     assert.notEqual(once, original)

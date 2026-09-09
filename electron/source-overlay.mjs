@@ -19,6 +19,20 @@ function replacement(source, before, after, subject) {
 
 /** Return strict, repeatable source edits; kept separate from filesystem ownership checks for tests. */
 export function overlaySource(relative, source) {
+  if (relative === 'src/main.ts') {
+    source = replacement(source, "import { resolveDesktopPaths } from './paths.ts'",
+      "import { resolveDesktopPaths } from './paths.ts'\nimport { installPrtsWindowChrome } from './prts-window-chrome.ts'", relative)
+    source = replacement(source, 'function createWindow(preload: string): BrowserWindow {',
+      'function createWindow(preload: string, prtsChrome = false): BrowserWindow {', relative)
+    source = replacement(source, '    show: false,\n    webPreferences:',
+      "    show: false,\n    frame: !prtsChrome,\n    ...(prtsChrome ? { backgroundColor: '#f4f4f1' } : {}),\n    webPreferences:", relative)
+    return replacement(source, '    const window = createWindow(appPreload)',
+      '    const window = createWindow(appPreload, true)\n    installPrtsWindowChrome(window, development === undefined ? openPluginWindow : undefined)', relative)
+  }
+  if (relative === 'src/preload-app.ts') {
+    return replacement(source, "import { contextBridge } from 'electron'",
+      "import { contextBridge } from 'electron'\nimport './prts-window-preload.ts'", relative)
+  }
   if (relative === 'scripts/prepare-runtime.ts') {
     return replacement(source,
       "  if (platform !== 'win') await chmod(destination, 0o755)",
@@ -82,10 +96,12 @@ export function applySourceOverlay(dshSource) {
   const templates = [
     { from: join(ownRoot, 'prts-seed-support.ts'), to: join(desktop, 'src/prts-seed-support.ts') },
     { from: join(ownRoot, 'workspace-policy.ts'), to: join(desktop, 'src/workspace-policy.ts') },
+    { from: join(ownRoot, 'prts-window-chrome.ts'), to: join(desktop, 'src/prts-window-chrome.ts') },
+    { from: join(ownRoot, 'prts-window-preload.ts'), to: join(desktop, 'src/prts-window-preload.ts') },
     { from: join(ownRoot, 'prepare-seed.ts'), to: join(desktop, 'scripts/prts-prepare-seed.ts') },
   ]
   for (const { from } of templates) readFileSync(from)
-  const edits = ['src/core-package-set.ts', 'src/project-manager.ts', 'scripts/prepare-runtime.ts'].map(relative => {
+  const edits = ['src/main.ts', 'src/preload-app.ts', 'src/core-package-set.ts', 'src/project-manager.ts', 'scripts/prepare-runtime.ts'].map(relative => {
     const path = join(desktop, relative)
     return { path, body: overlaySource(relative, readFileSync(path, 'utf8')) }
   })
