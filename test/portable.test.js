@@ -100,6 +100,39 @@ test('托管目录仅在发行标记变化时原子替换', () => {
   }
 })
 
+test('中文安装路径与中文模板文件可完成首次安装和更新', () => {
+  const root = mkdtempSync(join(tmpdir(), 'prts-unicode-test-'))
+  const appRoot = join(root, '建模文件', 'PRTS Terrarchive')
+  const dataRoot = join(appRoot, 'userdata')
+  const profile = join(appRoot, 'templates', 'profiles', 'web')
+  const plugin = join(profile, 'node_modules', 'prts-terrarchive')
+  const preset = join(appRoot, 'templates', '.agent-presets', 'prts')
+  try {
+    mkdirSync(join(plugin, '资料'), { recursive: true })
+    mkdirSync(join(preset, '提示词'), { recursive: true })
+    writeFileSync(join(profile, 'package.json'), JSON.stringify({
+      dependencies: { 'prts-terrarchive': '0.1.0-alpha.1' },
+    }))
+    writeFileSync(join(profile, 'cordis.yml'), 'name: web\n')
+    writeFileSync(join(profile, 'cordis.patch.yml'), 'patch: true\n')
+    writeFileSync(join(plugin, 'package.json'), '{"name":"prts-terrarchive"}\n')
+    const installedPlugin = join(dataRoot, 'profiles', 'web', 'node_modules', 'prts-terrarchive')
+    const installedPreset = join(dataRoot, '.agent-presets', 'prts')
+    for (const build of ['first', 'second']) {
+      for (const directory of [plugin, preset]) {
+        writeFileSync(join(directory, '.prts-portable-source.json'), JSON.stringify({ build }))
+      }
+      writeFileSync(join(plugin, '资料', '说明.txt'), `插件 ${build}`)
+      writeFileSync(join(preset, '提示词', '角色.md'), `角色 ${build}`)
+      syncManagedInstall({ appRoot, dataRoot })
+      assert.equal(readFileSync(join(installedPlugin, '资料', '说明.txt'), 'utf8'), `插件 ${build}`)
+      assert.equal(readFileSync(join(installedPreset, '提示词', '角色.md'), 'utf8'), `角色 ${build}`)
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
 test('拒绝把 Linux ELF 伪装成 Windows node.exe', () => {
   const directory = mkdtempSync(join(tmpdir(), 'prts-pe-test-'))
   const executable = join(directory, 'node.exe')

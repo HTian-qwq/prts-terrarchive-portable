@@ -111,7 +111,8 @@ function managedDirectoryIsCurrent(source, target) {
   }
 }
 
-function replaceManagedDirectory(source, target, dataRoot, expectedName) {
+function replaceManagedDirectory(source, target, dataRoot, expectedName, debug) {
+  debug(`${expectedName}: checking managed directory`)
   assertManagedTarget(dataRoot, target, expectedName)
   if (managedDirectoryIsCurrent(source, target)) return false
   const parent = dirname(target)
@@ -120,7 +121,16 @@ function replaceManagedDirectory(source, target, dataRoot, expectedName) {
   mkdirSync(parent, { recursive: true })
   removeDirectoryWithRetry(next)
   removeDirectoryWithRetry(backup)
-  cpSync(source, next, { recursive: true, dereference: true })
+  debug(`${expectedName}: copying managed directory`)
+  cpSync(source, next, {
+    recursive: true,
+    dereference: true,
+    // Node 22.19's unfiltered native directory copy can abort on Windows
+    // Unicode paths (nodejs/node#59636). A filter keeps traversal in JS.
+    // The staging directory is fresh, so native file-overwrite is also avoided.
+    filter: () => true,
+  })
+  debug(`${expectedName}: activating managed directory`)
   if (existsSync(target)) renameWithRetry(target, backup)
   try {
     renameWithRetry(next, target)
@@ -188,6 +198,7 @@ export function syncManagedInstall({ appRoot, dataRoot }) {
     join(profileDir, 'node_modules', MANAGED_PLUGIN),
     dataRoot,
     MANAGED_PLUGIN,
+    debug,
   )
   debug(`plugin dir ${pluginReplaced ? 'replaced' : 'already current'}`)
   const presetReplaced = replaceManagedDirectory(
@@ -195,6 +206,7 @@ export function syncManagedInstall({ appRoot, dataRoot }) {
     join(dataRoot, '.agent-presets', MANAGED_PRESET),
     dataRoot,
     MANAGED_PRESET,
+    debug,
   )
   debug(`preset dir ${presetReplaced ? 'replaced' : 'already current'}`)
   mkdirSync(join(dataRoot, 'logs'), { recursive: true })
