@@ -33,7 +33,7 @@ if (supported) {
   after(() => rmSync(source, { recursive: true, force: true }))
   writeFileSync(join(source, 'package.json'), '{"type":"module"}')
   mkdirSync(join(source, 'node_modules'))
-  for (const name of ['tar', 'semver']) {
+  for (const name of ['tar', 'semver', 'js-yaml']) {
     const store = join(dsh, 'node_modules/.pnpm')
     const installed = readdirSync(store).find(entry => entry.startsWith(`${name}@`))
     assert(installed, `DSH workspace must have ${name} installed`)
@@ -47,11 +47,12 @@ if (supported) {
       ? overlaySource(`src/${file}`, original) : original)
   }
   cpSync(join(root, 'electron/prts-seed-support.ts'), join(source, 'src/prts-seed-support.ts'))
+  cpSync(join(root, 'electron/workspace-policy.ts'), join(source, 'src/workspace-policy.ts'))
   cpSync(join(root, 'electron/prepare-seed.ts'), join(source, 'scripts/prts-prepare-seed.ts'))
   cpSync(join(dsh, 'apps/desktop/scripts/desktop-build-paths.mjs'), join(source, 'scripts/desktop-build-paths.mjs'))
   api = Object.assign({}, ...await Promise.all([
     'src/project-manager.ts', 'src/core-package-set.ts', 'src/seed-store.ts', 'src/paths.ts',
-    'src/host-protocol.ts', 'scripts/prts-prepare-seed.ts',
+    'src/host-protocol.ts', 'src/workspace-policy.ts', 'scripts/prts-prepare-seed.ts',
   ].map(file => import(pathToFileURL(join(source, file)).href))))
 }
 
@@ -67,6 +68,27 @@ integration('Pinned Desktop source overlays are exact and idempotent', () => {
     assert.equal(overlaySource(file, once), once)
     assert.throws(() => overlaySource(file, '// changed upstream'), /anchor changed/u)
   }
+})
+
+integration('Desktop workspace policy keeps core overrides and build permissions exact', () => {
+  const expected = {
+    packages: ['.'], overrides: { '@deepseek-ai/dsh': 'file:./desktop-packages/dsh.tgz' },
+    nodeLinker: 'hoisted', autoInstallPeers: false, strictDepBuilds: true,
+    allowBuilds: { 'node-pty': true, protobufjs: false },
+  }
+  const check = value => api.desktopWorkspaceMatches(JSON.stringify(value), JSON.stringify(expected))
+  assert.equal(check({ ...expected, minimumReleaseAgeExclude: ['@deepseek-ai/node-addon-system-linux-x64@0.1.2'] }), true)
+  assert.equal(check(Object.fromEntries(Object.entries(expected).reverse())), true)
+  for (const value of [
+    null, [], { ...expected, overrides: {} }, { ...expected, packages: ['*'] },
+    { ...expected, allowBuilds: { ...expected.allowBuilds, protobufjs: true } },
+    { ...expected, minimumReleaseAgeExclude: '*' },
+    { ...expected, minimumReleaseAgeExclude: ['@deepseek-ai/*'] },
+    { ...expected, minimumReleaseAgeExclude: [false] },
+    { ...expected, minimumReleaseAge: 0 },
+  ]) assert.equal(check(value), false)
+  assert.equal(api.desktopWorkspaceMatches('packages: [', JSON.stringify(expected)), false)
+  assert.equal(api.desktopWorkspaceMatches('packages: [.]\npackages: [.]\n', JSON.stringify(expected)), false)
 })
 
 function pack(directory, name, version, marker, plugin = true) {
@@ -92,7 +114,7 @@ function pack(directory, name, version, marker, plugin = true) {
   return path
 }
 
-async function fixture(t) {
+async function fixture(t, { pnpmAgeExclusions = false } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'prts-electron-seed-test-'))
   t.after(() => rmSync(dir, { recursive: true, force: true, maxRetries: 4, retryDelay: 100 }))
   const registryPackages = new Map()
@@ -140,6 +162,17 @@ async function fixture(t) {
   writeFileSync(join(base, 'desktop-packages.json'), JSON.stringify({ schemaVersion: 1, packages: records }))
   api.createSeedMetadata(base, { schemaVersion: 1, version, hostProtocolVersion: api.DESKTOP_HOST_PROTOCOL_VERSION,
     nodeVersion: process.versions.node, pnpmVersion: '11.7.0' })
+  if (pnpmAgeExclusions) {
+    // pnpm uses this same YAML writer when it automatically records young
+    // transitive versions, as in the real Windows build's base seed.
+    execFileSync(process.execPath, [pnpm, 'config', 'set', '--location=project', '--json',
+      'minimumReleaseAgeExclude', JSON.stringify([
+        '@deepseek-ai/node-addon-system-darwin-arm64@0.1.2',
+        '@deepseek-ai/node-addon-system-darwin-x64@0.1.2',
+        '@deepseek-ai/node-addon-system-linux-arm64@0.1.2',
+        '@deepseek-ai/node-addon-system-linux-x64@0.1.2',
+      ])], { cwd: base, stdio: 'pipe' })
+  }
   // Core packages are all local; this populates the same store later merged by the real manager.
   const { spawn } = await import('node:child_process')
   await new Promise((resolveDone, reject) => {
@@ -217,4 +250,31 @@ integration('Registry PRTS updates, removals, and third-party bundles survive of
   assert.equal(await f.apply(f.seedA), true)
   assert.deepEqual(f.manager.listPlugins(), [{ name: 'test-third-party', version: '1.0.0' }])
   assert.equal(f.marker('test-third-party'), 'third')
+})
+
+integration('Official manager accepts pnpm workspace updates through offline install and seed upgrade', async t => {
+  const f = await fixture(t, { pnpmAgeExclusions: true })
+  await f.closeRegistry()
+  assert.equal(await f.apply(f.seedA), true)
+  assert.deepEqual(f.manager.listPlugins(), [{ name: 'prts-terrarchive', version: '0.1.0' }])
+  const workspace = join(f.manager.paths.profile, 'pnpm-workspace.yaml')
+  const original = readFileSync(workspace, 'utf8')
+  assert.match(original, /minimumReleaseAgeExclude/u)
+  assert.equal(await f.apply(f.seedB), true)
+  assert.equal(f.marker('prts-terrarchive'), 'B')
+  assert.deepEqual(f.manager.listPlugins(), [{ name: 'prts-terrarchive', version: '0.1.0' }])
+  assert.equal(readFileSync(workspace, 'utf8'), original, 'preserve pnpm policy metadata unchanged')
+  writeFileSync(workspace, '# Windows comments and CRLF\r\n' + original.replaceAll('\n', '\r\n'))
+  assert.deepEqual(f.manager.listPlugins(), [{ name: 'prts-terrarchive', version: '0.1.0' }])
+  for (const tampered of [
+    original.replace('strictDepBuilds: true', 'strictDepBuilds: false'),
+    original.replace(/file:\.\/desktop-packages\/[^\s"']+/u, '1.0.0'),
+    original + '\nignoreScripts: false\n',
+  ]) {
+    writeFileSync(workspace, tampered)
+    assert.throws(() => f.manager.listPlugins(), /core package mapping/u)
+  }
+  writeFileSync(workspace, original)
+  await f.manager.mutate({ type: 'plugin-remove', name: 'prts-terrarchive' }, f.hooks)
+  assert.deepEqual(f.manager.listPlugins(), [])
 })

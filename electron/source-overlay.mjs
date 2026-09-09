@@ -31,6 +31,11 @@ export function overlaySource(relative, source) {
       'const expectedFiles = [...packageSet.packages.map(entry => entry.file), ...prtsSeedPackageFiles(projectDir)].sort()', relative)
   }
   if (relative !== 'src/project-manager.ts') throw new Error(`Unknown overlay source: ${relative}`)
+  source = replacement(source, "import { spawn } from 'node:child_process'",
+    "import { spawn } from 'node:child_process'\nimport { desktopWorkspaceMatches } from './workspace-policy.ts'", relative)
+  source = replacement(source,
+    "readFileSync(join(projectDir, 'pnpm-workspace.yaml'), 'utf8') !== workspaceFile(expectedOverrides)",
+    "!desktopWorkspaceMatches(readFileSync(join(projectDir, 'pnpm-workspace.yaml'), 'utf8'), workspaceFile(expectedOverrides))", relative)
   source = replacement(source, "import { extractPnpmStoreArchives, mergePnpmStore } from './seed-store.ts'",
     "import { extractPnpmStoreArchives, mergePnpmStore } from './seed-store.ts'\nimport { PRTS_SEED_FILE, reconcilePrtsSeedUpgrade, samePrtsSeedRevision } from './prts-seed-support.ts'", relative)
   source = replacement(source, '  DESKTOP_PACKAGE_SET_FILE,\n] as const',
@@ -76,6 +81,7 @@ export function applySourceOverlay(dshSource) {
   const desktop = join(target, 'apps/desktop')
   const templates = [
     { from: join(ownRoot, 'prts-seed-support.ts'), to: join(desktop, 'src/prts-seed-support.ts') },
+    { from: join(ownRoot, 'workspace-policy.ts'), to: join(desktop, 'src/workspace-policy.ts') },
     { from: join(ownRoot, 'prepare-seed.ts'), to: join(desktop, 'scripts/prts-prepare-seed.ts') },
   ]
   for (const { from } of templates) readFileSync(from)
