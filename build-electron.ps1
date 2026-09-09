@@ -128,6 +128,7 @@ try {
     Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'electron\portable-main.mjs') -Destination $DesktopRoot -Force
     Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'electron\builder-config.mjs') -Destination (Join-Path $DesktopRoot 'prts-builder-config.mjs') -Force
     Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'electron\smoke.ts') -Destination (Join-Path $DesktopRoot 'scripts\prts-smoke.ts') -Force
+    Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'electron\smoke-corpus.mjs') -Destination (Join-Path $DesktopRoot 'scripts\prts-smoke-corpus.mjs') -Force
     Push-Location $DesktopRoot
     try {
         Invoke-Checked -Command $Corepack -ArgumentList @('pnpm', 'exec', 'electron-builder',

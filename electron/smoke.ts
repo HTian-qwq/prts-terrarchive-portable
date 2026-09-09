@@ -9,6 +9,7 @@ import { parseArgs } from 'node:util'
 import { DesktopProjectManager } from '../src/project-manager.ts'
 import { resolveDesktopPaths } from '../src/paths.ts'
 import { DesktopHostProcess } from '../src/host-process.ts'
+import { waitForCorpusReady } from './prts-smoke-corpus.mjs'
 
 const { values } = parseArgs({ options: { artifact: { type: 'string' } } })
 if (!values.artifact) throw new Error('usage: prts-smoke.ts --artifact <expanded Windows release>')
@@ -71,23 +72,15 @@ try {
     workspaceId: createdWorkspace.workspace.workspaceId, agentPreset: 'prts',
   } })
   assert.equal(session.agentPreset, 'prts')
-  const statusResponse = await active.fetch(new Request('dsh-app://app/api/prts-corpus/rpc', {
-    method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ endpoint: 'status', payload: {} }), signal: AbortSignal.timeout(60_000),
-  }))
-  assert.equal(statusResponse.status, 200)
-  const status = await statusResponse.json()
-  assert.equal(status.ok, true)
-  assert.equal(status.value.store.installed, true)
-  assert.equal(status.value.store.loaded, true)
-  assert.equal(status.value.store.releaseId, release.corpusReleaseId)
-  assert.equal(status.value.store.documentCount, release.corpusDocumentCount)
+  const store = await waitForCorpusReady(request => active.fetch(request), release, {
+    onProgress: elapsed => console.log(`Waiting for PRTS background corpus indexes (${Math.round(elapsed / 1000)}s)...`),
+  })
   for (const path of ['/index.html', '/api/prts-corpus/skins/common.css', '/api/prts-corpus/ui-skin.json']) {
     const response = await active.fetch(new Request(`dsh-app://app${path}`, { signal: AbortSignal.timeout(30_000) }))
     assert.equal(response.status, 200, path)
     await response.arrayBuffer()
   }
-  console.log(`Electron seed and official Host passed: ${release.dshVersion}, ${status.value.store.documentCount} documents; no model request or corpus download.`)
+  console.log(`Electron seed and official Host passed: ${release.dshVersion}, ${store.documentCount} documents; no model request or corpus download.`)
 } finally {
   await host?.stop()
   for (const [name, value] of Object.entries(previous)) {
