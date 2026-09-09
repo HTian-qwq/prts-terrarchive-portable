@@ -1,5 +1,5 @@
 /** Package the official shell with portable ownership and community branding. */
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, rmSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
 /** Create the unsigned Windows shell configuration from prepared upstream files. */
@@ -50,6 +50,15 @@ export function createPortableBuilderConfig({
       publish: null,
     },
     publish: null,
+    afterPack({ appOutDir }) {
+      // pnpm 11.7 ships these optional native packages together on every OS.
+      // Prune only the generated Windows x64 copy, after extraResources lands;
+      // keep the shared loader, Windows x64 binding, and prepared runtime intact.
+      const scope = join(appOutDir, 'resources', 'runtime', 'pnpm', 'dist', 'node_modules', '@reflink')
+      for (const name of ['reflink-darwin-arm64', 'reflink-darwin-x64', 'reflink-win32-arm64-msvc']) {
+        rmSync(join(scope, name), { recursive: true, force: true })
+      }
+    },
     afterAllArtifactBuild() {
       // Upstream disables its updater when this resource is absent. Refuse a
       // stale or accidentally generated update feed before outer ZIP assembly.

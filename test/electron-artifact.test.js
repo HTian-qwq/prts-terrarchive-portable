@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url'
 import { gzipSync } from 'node:zlib'
 import { assemble } from '../scripts/assemble-electron.mjs'
 import { auditElectronArtifact, electronVersions, inspectElectronInput } from '../scripts/audit-electron-artifact.mjs'
+import { createPortableBuilderConfig } from '../electron/builder-config.mjs'
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const explicitPlugin = process.env.PRTS_PLUGIN_TEST_ROOT?.trim()
@@ -181,6 +182,40 @@ test('Electron assembly preserves current seven packs and hashes the offline plu
   await assert.rejects(assemble(options, { versions }), /拒绝覆盖/u)
   assert.equal(readFileSync(join(options.out, 'userdata/preserve.txt'), 'utf8'), 'user data')
   await assert.rejects(assemble({ ...options, out: join(options.plugin, 'output') }, { versions }), /重叠/u)
+})
+
+test('Windows packaging removes pnpm foreign bindings while retaining its x64 runtime and strict native audit', { skip: !pluginRoot }, (t) => {
+  const { versions, options } = fixture(t)
+  const appRoot = join(options.dshSource, 'apps/desktop')
+  const prepared = join(appRoot, '.desktop-build/targets/win-x64/runtime/pnpm/dist/node_modules/@reflink')
+  const packaged = join(options.electronDir, 'resources/runtime/pnpm/dist/node_modules/@reflink')
+  const bindings = {
+    'reflink-darwin-arm64/reflink.darwin-arm64.node': Buffer.alloc(128, 0xcf),
+    'reflink-darwin-x64/reflink.darwin-x64.node': Buffer.alloc(128, 0xcf),
+    'reflink-win32-arm64-msvc/reflink.win32-arm64-msvc.node': pe(0xaa64),
+    'reflink-win32-x64-msvc/reflink.win32-x64-msvc.node': pe(),
+    'reflink/index.js': '// shared platform loader',
+  }
+  for (const [name, content] of Object.entries(bindings)) put(join(prepared, name), content)
+  cpSync(prepared, packaged, { recursive: true, filter: () => true })
+  const inspect = () => inspectElectronInput(options.electronDir, { versions })
+  assert.throws(inspect, /不是 Windows PE/u, 'reproduce the mixed-platform pnpm package failure')
+  const config = createPortableBuilderConfig({ portableRoot: repositoryRoot, appRoot, output: dirname(options.electronDir) })
+  for (let attempt = 0; attempt < 2; attempt++) {
+    config.afterPack({ appOutDir: options.electronDir })
+    assert.equal(inspect().nativeModules, 2)
+    assert.deepEqual(readdirSync(packaged).sort(), ['reflink', 'reflink-win32-x64-msvc'])
+    assert.equal(readFileSync(join(packaged, 'reflink/index.js'), 'utf8'), bindings['reflink/index.js'])
+    for (const [name, content] of Object.entries(bindings)) {
+      assert.deepEqual(readFileSync(join(prepared, name)), Buffer.from(content), 'prepared pnpm stays unchanged')
+    }
+  }
+  put(join(packaged, 'reflink-win32-x64-msvc/reflink.win32-x64-msvc.node'), pe(0xaa64))
+  assert.throws(inspect, /不是 Windows x64/u, 'the retained binding must still pass the architecture check')
+  put(join(packaged, 'reflink-win32-x64-msvc/reflink.win32-x64-msvc.node'), pe())
+  put(join(packaged, 'unexpected/runtime.node'), Buffer.alloc(128, 0x7f))
+  config.afterPack({ appOutDir: options.electronDir })
+  assert.throws(inspect, /不是 Windows PE/u, 'unrecognized native modules are never exempted or silently deleted')
 })
 
 test('Electron audit detects damaged seed and PRTS registration even with a rebuilt inventory', { skip: !pluginRoot }, (t) => {
