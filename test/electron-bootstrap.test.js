@@ -92,16 +92,55 @@ test('移动便携目录后保留配置并重新定位 userdata 和 corpus', (t)
   assert.equal(readFileSync(join(moved, 'userdata', 'prts-corpus.json'), 'utf8'), config)
 })
 
+test('升级到 client 布局并移动中文目录后，直接启动客户端仍读取原会话、配置和语料', (t) => {
+  const parent = temporary(t)
+  const old = join(parent, 'client') // Old flat package may itself be named client.
+  const initial = configurePortableElectron(application(), { executable: join(old, 'PRTS.exe'), environment: {} })
+  assert.equal(initial.appRoot, old)
+  const config = '{"uiSkin":"endfield-aic"}\n'
+  writeFileSync(join(old, 'userdata', 'prts-corpus.json'), config)
+  writeFileSync(join(old, 'userdata', 'electron', 'session', 'fixture'), 'saved session')
+  mkdirSync(join(old, 'corpus', 'releases'), { recursive: true })
+  writeFileSync(join(old, 'corpus', 'releases', 'current.json'), '{"release_id":"user-update"}\n')
+  mkdirSync(join(old, 'client'))
+  const branding = { ...versions, layout: 'client-v1' }
+  const checkData = (root) => {
+    const environment = { DSH_HOME: '/external', PRTS_CORPUS_RELEASES_DIR: '/external' }
+    const app = application()
+    const paths = configurePortableElectron(app, { executable: join(root, 'client', 'PRTS Terrarchive.exe'), environment, branding })
+    assert.equal(paths.appRoot, root)
+    assert.equal(environment.DSH_HOME, join(root, 'userdata'))
+    assert.equal(environment.PRTS_CORPUS_RELEASES_DIR, join(root, 'corpus', 'releases'))
+    assert.equal(readFileSync(join(environment.DSH_HOME, 'prts-corpus.json'), 'utf8'), config)
+    assert.equal(readFileSync(join(app.paths.sessionData, 'fixture'), 'utf8'), 'saved session')
+    assert.equal(JSON.parse(readFileSync(join(environment.PRTS_CORPUS_RELEASES_DIR, 'current.json'), 'utf8')).release_id, 'user-update')
+    assert.equal(existsSync(join(root, 'client', 'userdata')), false)
+  }
+  checkData(old)
+  const moved = join(parent, '资料 移动之后')
+  renameSync(old, moved)
+  checkData(moved)
+})
+
+test('带新版布局标记的主程序放错位置时，不在错误目录创建 userdata', (t) => {
+  const root = temporary(t)
+  assert.throws(() => configurePortableElectron(application(), {
+    executable: join(root, 'PRTS Terrarchive.exe'), environment: {}, branding: { layout: 'client-v1' },
+  }), /client/u)
+  assert.equal(existsSync(join(root, 'userdata')), false)
+})
+
 async function executePackagedEntry(t, { failDirectory = false } = {}) {
   const root = temporary(t)
-  mkdirSync(join(root, 'node_modules', 'electron'), { recursive: true })
-  mkdirSync(join(root, 'lib'))
-  copyFileSync(join(repository, 'electron', 'portable-main.mjs'), join(root, 'portable-main.mjs'))
-  writeFileSync(join(root, 'package.json'), JSON.stringify({
-    type: 'module', productName: versions.productName, prtsPortable: { appId: versions.appId },
+  const client = join(root, 'client')
+  mkdirSync(join(client, 'node_modules', 'electron'), { recursive: true })
+  mkdirSync(join(client, 'lib'))
+  copyFileSync(join(repository, 'electron', 'portable-main.mjs'), join(client, 'portable-main.mjs'))
+  writeFileSync(join(client, 'package.json'), JSON.stringify({
+    type: 'module', productName: versions.productName, prtsPortable: { appId: versions.appId, layout: 'client-v1' },
   }))
-  writeFileSync(join(root, 'node_modules', 'electron', 'index.js'), "module.exports = globalThis[Symbol.for('prts-electron-entry-test')]\n")
-  writeFileSync(join(root, 'lib', 'main.js'), "globalThis[Symbol.for('prts-electron-entry-test')].enteredMain()\n")
+  writeFileSync(join(client, 'node_modules', 'electron', 'index.js'), "module.exports = globalThis[Symbol.for('prts-electron-entry-test')]\n")
+  writeFileSync(join(client, 'lib', 'main.js'), "globalThis[Symbol.for('prts-electron-entry-test')].enteredMain()\n")
   if (failDirectory) writeFileSync(join(root, 'userdata'), 'A file blocks creation of the portable data directory.')
   const symbol = Symbol.for('prts-electron-entry-test')
   const app = application()
@@ -122,9 +161,9 @@ async function executePackagedEntry(t, { failDirectory = false } = {}) {
   const previous = Object.fromEntries(['DSH_HOME', 'PRTS_PORTABLE', 'PRTS_CORPUS_RELEASES_DIR'].map(name => [name, process.env[name]]))
   globalThis[symbol] = shim
   try {
-    Object.defineProperty(process, 'execPath', { ...executableDescriptor, value: join(root, 'PRTS Terrarchive.exe') })
+    Object.defineProperty(process, 'execPath', { ...executableDescriptor, value: join(client, 'PRTS Terrarchive.exe') })
     Object.defineProperty(process.versions, 'electron', { configurable: true, value: versions.electron })
-    await import(pathToFileURL(join(root, 'portable-main.mjs')).href)
+    await import(pathToFileURL(join(client, 'portable-main.mjs')).href)
   } finally {
     Object.defineProperty(process, 'execPath', executableDescriptor)
     if (electronDescriptor) Object.defineProperty(process.versions, 'electron', electronDescriptor)
@@ -169,6 +208,7 @@ test('免凭据构建使用官方主程序和独立 PRTS seed，保留图标并�
   const { appRoot, config } = builderFixture(t)
   assert.equal(config.extends, null)
   assert.equal(config.extraMetadata.main, 'portable-main.mjs')
+  assert.equal(config.extraMetadata.prtsPortable.layout, 'client-v1')
   assert(config.files.includes('lib/*.js'))
   assert(config.files.includes('lib/*.cjs'))
   assert(config.files.includes('renderer/**/*'))

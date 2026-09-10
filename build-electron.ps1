@@ -11,6 +11,7 @@ $BuildRoot = Join-Path $RepositoryRoot '.build'
 $DshSource = Join-Path $BuildRoot 'dsh-electron'
 $CorpusReleases = Join-Path $BuildRoot 'corpus\releases'
 $PluginPackages = Join-Path $BuildRoot 'electron-plugin'
+$LauncherDirectory = Join-Path $BuildRoot 'electron-launcher'
 $NodeDirectory = Join-Path $ToolsRoot 'node'
 $Node = Join-Path $NodeDirectory 'node.exe'
 $Corepack = Join-Path $NodeDirectory 'corepack.cmd'
@@ -61,11 +62,12 @@ if (-not ($BuildVersion.Major -ge 24 -or ($BuildVersion.Major -eq 22 -and $Build
     throw 'Building DSH requires Node.js 22.19+ or 24+.'
 }
 
-if (-not $SkipDshBuild) {
-    $VsWhere = Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) 'Microsoft Visual Studio\Installer\vswhere.exe'
-    Assert-File $VsWhere 'Visual Studio Build Tools (Desktop development with C++)'
-    $Installation = & $VsWhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
-    if ($LASTEXITCODE -ne 0 -or -not $Installation) { throw 'MSVC x64/x86 and a Windows SDK are required to build DSH native dependencies.' }
+Write-Host 'Building the small portable launcher...' -ForegroundColor Cyan
+& (Join-Path $RepositoryRoot 'electron\build-launcher.ps1') -OutputDirectory $LauncherDirectory
+$Launcher = Join-Path $LauncherDirectory 'PRTS Terrarchive.exe'
+Assert-File $Launcher 'native portable launcher'
+if (-not $SkipSmoke) {
+    Invoke-Checked -Command $Node -ArgumentList @((Join-Path $RepositoryRoot 'electron\smoke-launcher.mjs'), '--launcher', $Launcher, '--node', $Node)
 }
 
 if (-not (Test-Path -LiteralPath (Join-Path $DshSource '.git'))) {
@@ -137,7 +139,7 @@ try {
 
     New-Item -ItemType Directory -Force $StagingRoot | Out-Null
     Invoke-Checked -Command $Node -ArgumentList @((Join-Path $RepositoryRoot 'scripts\assemble-electron.mjs'),
-        '--electron-dir', (Join-Path $ElectronOutput 'win-unpacked'), '--dsh-source', $DshSource,
+        '--electron-dir', (Join-Path $ElectronOutput 'win-unpacked'), '--launcher', $Launcher, '--dsh-source', $DshSource,
         '--plugin', (Resolve-Path -LiteralPath $PluginPath).Path, '--corpus-releases', $CorpusReleases, '--out', $StagingDirectory)
     # assemble-electron audits the completed artifact before returning.
     if (-not $SkipSmoke) {

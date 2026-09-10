@@ -37,7 +37,7 @@ function pe(machine = 0x8664) {
 function asar(versions, { omit, main = 'portable-main.mjs', invalidOffset } = {}) {
   const contents = {
     'package.json': JSON.stringify({ version: versions.dsh.version, main,
-      prtsPortable: { version: versions.portable, appId: versions.appId } }),
+      prtsPortable: { version: versions.portable, appId: versions.appId, layout: 'client-v1' } }),
     'portable-main.mjs': 'import("./lib/main.js")', 'lib/main.js': 'export {}',
     'lib/preload.cjs': 'module.exports = {}', 'lib/preload-app.cjs': 'module.exports = {}',
     'renderer/plugin-manager.html': '<main></main>', 'renderer/plugin-manager.js': '// fixture',
@@ -149,6 +149,8 @@ function fixture(t) {
   execFileSync('tar', ['-cf', join(seed, 'store-archives/store-00.tar'), '-C', join(root, 'store'), 'v11/files/fixture'])
   seal(seed)
   put(join(electronDir, `${versions.productName}.exe`), pe())
+  put(join(electronDir, 'ffmpeg.dll'), pe())
+  put(join(electronDir, 'locales/zh-CN.pak'), 'language fixture')
   put(join(electronDir, 'resources/runtime/node/node.exe'), pe())
   put(join(electronDir, 'resources/native/runtime.node'), pe())
   put(join(electronDir, 'resources/runtime/node/LICENSE'), 'Node license fixture')
@@ -159,7 +161,8 @@ function fixture(t) {
   put(join(electronDir, 'LICENSE.electron.txt'), 'Electron license fixture')
   put(join(electronDir, 'LICENSES.chromium.html'), '<html>Chromium license fixture</html>')
   const corpusReleases = join(root, 'corpus-source'); corpusFixture(corpusReleases, pluginPackage.version)
-  return { root, versions, seed, pluginFile, options: { electronDir, dshSource, plugin, corpusReleases, out: join(root, '中文 output') } }
+  const launcher = join(root, 'launcher.exe'); put(launcher, pe())
+  return { root, versions, seed, pluginFile, options: { electronDir, launcher, dshSource, plugin, corpusReleases, out: join(root, '中文 output') } }
 }
 
 test('Electron assembly preserves current seven packs and hashes the offline plugin, including Unicode paths', {
@@ -172,6 +175,14 @@ test('Electron assembly preserves current seven packs and hashes the offline plu
   assert.equal(manifest.dshVersion, versions.dsh.version)
   assert.equal(manifest.dshCommit, versions.dsh.commit)
   assert.match(manifest.pluginSha256, /^[a-f0-9]{64}$/u)
+  assert.equal(manifest.layout, 'client-v1')
+  assert.equal(manifest.launcherSha256, digest(readFileSync(options.launcher)))
+  assert.deepEqual(readdirSync(options.out).sort(), [
+    `${versions.productName}.exe`, 'client', 'corpus', 'LICENSES', '使用说明.txt', 'release-manifest.json',
+  ].sort())
+  for (const path of [`${versions.productName}.exe`, 'ffmpeg.dll', 'locales/zh-CN.pak', 'resources/app.asar']) {
+    assert.deepEqual(readFileSync(join(options.out, 'client', path)), readFileSync(join(options.electronDir, path)))
+  }
   assert.deepEqual(readdirSync(join(options.out, 'corpus/releases')).sort(), ['current.json', 'release-A'])
   assert.equal(existsSync(join(options.out, 'corpus/releases/release-A/official_game/shards/residue.tmp')), false)
   assert.equal(existsSync(join(options.out, 'userdata')), false)
@@ -262,6 +273,13 @@ test('Finished Electron artifact rejects corpus history, extra assets and corrup
   const { versions, options } = fixture(t)
   await assemble(options, { versions })
   const audit = () => auditElectronArtifact(options.out, { versions })
+  put(join(options.out, 'ffmpeg.dll'), pe())
+  await assert.rejects(audit, /根目录/u)
+  rmSync(join(options.out, 'ffmpeg.dll'))
+  const launcher = join(options.out, `${versions.productName}.exe`)
+  const changed = readFileSync(launcher); changed[20] ^= 1; put(launcher, changed)
+  await assert.rejects(audit, /启动器/u)
+  put(launcher, readFileSync(options.launcher))
   put(join(options.out, 'corpus/releases/old-release/stale'), 'history')
   await assert.rejects(audit, /current/u)
   rmSync(join(options.out, 'corpus/releases/old-release'), { recursive: true })

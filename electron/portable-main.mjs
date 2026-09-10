@@ -1,7 +1,7 @@
 /** Locate portable data before the official Electron main module is evaluated. */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { dirname, join, resolve } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 
 function writeFirstRunFile(path, contents) {
   try {
@@ -19,7 +19,13 @@ export function configurePortableElectron(application, {
   environment = process.env,
   branding = {},
 } = {}) {
-  const appRoot = dirname(resolve(executable))
+  const executableRoot = dirname(resolve(executable))
+  if (branding.layout === 'client-v1' && basename(executableRoot).toLowerCase() !== 'client') {
+    throw new Error('PRTS Electron 主程序应位于 client/ 中，请完整解压新版便携包。')
+  }
+  // Metadata selects the layout explicitly: old flat packages (even one named
+  // "client") retain their own data directory. Direct client launches also work.
+  const appRoot = branding.layout === 'client-v1' ? dirname(executableRoot) : executableRoot
   const dataRoot = join(appRoot, 'userdata')
   const electronRoot = join(dataRoot, 'electron')
   const sessionRoot = join(electronRoot, 'session')
@@ -66,6 +72,7 @@ if (process.versions.electron) {
     await startPortableElectron(app, { branding: {
       productName: metadata.productName,
       appId: metadata.prtsPortable.appId,
+      layout: metadata.prtsPortable.layout,
     } })
   } catch (error) {
     dialog.showErrorBox('PRTS Terrarchive 启动失败', error instanceof Error ? error.message : String(error))

@@ -20,7 +20,7 @@ Electron 版沿用旧便携版的无边框窗口设计：PRTS Agent 使用浅色
 Endfield AIC 使用黑底荧光黄切角控制栏，随皮肤选择即时切换。右上角应用菜单保留官方
 插件管理入口，也可按 `Ctrl+,` 打开；顶部可拖动窗口，方框按钮最大化或还原，
 `F11` 切换全屏，`Esc` 退出全屏。原生目录选择器、插件管理器和 Host 通信沿用官方实现。
-便携封装把 Harness 会话、设置、凭据及 Electron 浏览器数据放在 EXE 旁的 `userdata/`，首次默认
+便携封装把 Harness 会话、设置、凭据及 Electron 浏览器数据放在发行包根目录的 `userdata/`，首次默认
 使用 PRTS 模式与 PRTS Agent 皮肤。既有用户的模式和皮肤选择会保留。
 Windows 上关闭最后一个窗口会按官方客户端的行为退出应用。
 
@@ -30,6 +30,11 @@ Windows 上关闭最后一个窗口会按官方客户端的行为退出应用。
 
 这是社区构建的便携 ZIP，不使用深度求索的桌面自动更新源，也不需要官方签名或上传凭据。
 桌面程序更新通过下载新版完整 ZIP 完成；已有 `userdata/` 不应作为发行内容分享或覆盖。
+新版根目录的 EXE 是小型原生启动器，Electron 主程序、DLL、语言包和离线安装材料统一放入
+`client/`。这只整理文件位置，不会缩减 Electron 运行时或完整语料，压缩包总体积基本不变。
+升级时先退出旧程序，将新版解压到新目录，再把原 `userdata/` 复制到新版根目录；若曾更新过
+语料，也请保留原 `corpus/`。旧根目录的 `resources/`、DLL、pak 等程序文件不需要复制。
+直接打开 `client/` 内的主程序也会使用根目录的语料和用户数据；请保持完整目录结构。
 新入口生成独立的 Electron 成品目录；若构建输出中已有用户数据，构建器保留该目录，
 另行生成新的 ZIP 和暂存目录。
 
@@ -43,8 +48,9 @@ cd D:\ds\prts-terrarchive-portable
 ```
 
 需要 Windows x64、Node.js 22.19+（或 24+）、Corepack、Git、Windows `tar.exe`，以及
-Visual Studio Build Tools 的 Desktop development with C++ 工作负载和 Windows SDK。
-Electron 构建不使用 .NET SDK 或 WebView2。内置运行时由官方准备流程下载并校验；
+Visual Studio 2022 Build Tools 17.1+ 的 Desktop development with C++ 工作负载和 Windows SDK。
+Electron 构建不使用 .NET SDK 或 WebView2。内置运行时由官方准备流程下载并校验。
+小启动器使用 MSVC 静态链接，不要求用户另装 .NET 或 VC++ 运行库。
 [`versions.electron.json`](versions.electron.json) 固定 DSH 源码提交、Node、pnpm 和 Electron 版本。
 本地插件源码必须包含新的 Electron 传输和预设注册支持。
 
@@ -54,19 +60,25 @@ Electron 构建不使用 .NET SDK 或 WebView2。内置运行时由官方准备�
 .\build-electron.ps1 -SkipDshBuild
 ```
 
+`-SkipDshBuild` 仍会重新编译小启动器并更新便携适配，因此也需要上述 C++ 构建工具。
+
 构建器使用独立 `.build/dsh-electron` 源码副本，应用本项目维护的便携适配，运行官方
 构建、打包和离线安装校验，加入本地 PRTS 包，再生成未签名的 Electron 应用目录。
 组装后检查 Windows PE 架构、安装文件完整性和语料，并通过官方 Desktop Host 创建
 空 PRTS 会话进行冒烟测试；测试不调用模型。验证失败不会生成正式 ZIP。
+构建时还会在含中文和空格的临时目录运行真实启动器，检查工作目录和参数传递。
 `-SkipSmoke` 只用于排查构建环境问题，正常发行应运行默认检查。
 
 ```text
 dist/PRTS-Terrarchive-Electron-windows-x64/
-├─ PRTS Terrarchive.exe
-├─ resources/
-│  ├─ app.asar               # 官方 Electron 客户端及便携启动入口
-│  ├─ runtime/               # 内置 Node.js 和 pnpm
-│  └─ seed/                  # 离线安装材料，包含 PRTS 插件
+├─ PRTS Terrarchive.exe       # 小型原生启动器
+├─ client/
+│  ├─ PRTS Terrarchive.exe    # Electron 主程序
+│  ├─ *.dll、*.pak、locales/  # Electron 运行时文件
+│  └─ resources/
+│     ├─ app.asar            # 官方客户端及便携适配
+│     ├─ runtime/            # 内置 Node.js 和 pnpm
+│     └─ seed/               # 离线安装材料，包含 PRTS 插件
 ├─ corpus/releases/          # 完整、已校验的当前语料
 ├─ userdata/                 # 用户运行后创建，不进入 ZIP
 ├─ LICENSES/

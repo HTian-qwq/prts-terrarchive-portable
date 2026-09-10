@@ -34,7 +34,7 @@ export function createPortableBuilderConfig({
     extraMetadata: {
       main: 'portable-main.mjs',
       productName: versions.productName,
-      prtsPortable: { version: versions.portable, appId: versions.appId },
+      prtsPortable: { version: versions.portable, appId: versions.appId, layout: 'client-v1' },
     },
     extraResources: [
       { from: join(targetRoot, 'runtime'), to: 'runtime' },

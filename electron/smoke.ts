@@ -31,10 +31,10 @@ process.env.PRTS_CORPUS_RELEASES_DIR = join(artifact, 'corpus', 'releases')
 process.env.PRTS_PORTABLE = '1'
 writeFileSync(join(home, 'cordis.patch.yml'), '- id: agent-presets\n  config:\n    default: prts\n')
 const runtime = {
-  node: join(artifact, 'resources', 'runtime', 'node', 'node.exe'),
-  pnpm: join(artifact, 'resources', 'runtime', 'pnpm', 'bin', 'pnpm.mjs'),
+  node: join(artifact, 'client', 'resources', 'runtime', 'node', 'node.exe'),
+  pnpm: join(artifact, 'client', 'resources', 'runtime', 'pnpm', 'bin', 'pnpm.mjs'),
 }
-const seed = join(artifact, 'resources', 'seed')
+const seed = join(artifact, 'client', 'resources', 'seed')
 let host: DesktopHostProcess | undefined
 try {
   const manager = new DesktopProjectManager(resolveDesktopPaths(home), runtime)

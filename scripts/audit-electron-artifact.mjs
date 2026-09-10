@@ -91,7 +91,8 @@ function checkAsar(path, versions) {
       'Electron ASAR package.json 不完整')
     const metadata = JSON.parse(content.toString('utf8'))
     check(metadata.main === 'portable-main.mjs' && metadata.version === versions.dsh.version
-      && metadata.prtsPortable?.version === versions.portable && metadata.prtsPortable?.appId === versions.appId,
+      && metadata.prtsPortable?.version === versions.portable && metadata.prtsPortable?.appId === versions.appId
+      && metadata.prtsPortable?.layout === 'client-v1',
       'Electron ASAR 未使用正确的 PRTS 便携入口或版本')
   } finally { closeSync(fd) }
 }
@@ -199,10 +200,19 @@ export function inspectElectronInput(artifact, { versions = electronVersions } =
 
 /** Audit the finished Windows Electron distribution without installing or launching it. */
 export async function auditElectronArtifact(artifact, { versions = electronVersions } = {}) {
-  const input = inspectElectronInput(artifact, { versions })
-  const { root, plugin, pluginSha256, revision } = input
+  const root = resolve(artifact)
+  checkPrivateFiles(filesIn(root), root)
+  assert.deepEqual(readdirSync(root).sort(), [
+    `${versions.productName}.exe`, 'client', 'corpus', 'LICENSES', '使用说明.txt', 'release-manifest.json',
+  ].sort(), 'Electron 发行根目录应只包含启动器、client、语料和说明文件')
+  const input = inspectElectronInput(join(root, 'client'), { versions })
+  const { plugin, pluginSha256, revision } = input
   const manifest = json(join(root, 'release-manifest.json'))
   check(manifest.distribution === 'electron-portable' && manifest.platform === 'win32-x64', '不是 Windows Electron 便携版清单')
+  const launcher = join(root, `${versions.productName}.exe`)
+  assertWindowsX64Executable(launcher, '便携启动器')
+  check(manifest.layout === 'client-v1' && hash(launcher) === manifest.launcherSha256, '便携启动器或目录布局与发行清单不符')
+  check(lstatSync(launcher).size < 2 * 1024 * 1024, '便携启动器应小于 2 MiB')
   for (const [field, value] of Object.entries({
     portableVersion: versions.portable, electronVersion: versions.electron,
     dshVersion: versions.dsh.version, dshCommit: versions.dsh.commit,
