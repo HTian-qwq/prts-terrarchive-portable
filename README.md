@@ -6,6 +6,12 @@ Node.js、固定版本 DeepSeek Harness、`prts-terrarchive`、PRTS 预设和完
 
 > 独立社区项目，与深度求索、鹰角网络及其关联方不存在隶属、合作、授权或背书关系。
 
+## 本地联动测试版（不压缩）
+
+插件项目双击 `run-test-desktop.cmd`，或运行 `npm run test:desktop`，即可构建当前源码并打开测试版。
+`npm run test:desktop:watch` 监听修改；新构建就绪后在窗口按 `Ctrl+Shift+R` 应用，保留测试设置和会话。
+每版都先运行真实 Host 检查，成功后才更新入口。使用方式、输出和缓存依赖见 [本地桌面测试版](docs/local-test-desktop.md)。
+
 ## 官方 Electron 客户端便携版
 
 新增构建入口使用 DeepSeek Harness 官方 Electron 源码作为桌面客户端，沿用本项目的插件、
