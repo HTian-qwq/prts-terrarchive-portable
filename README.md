@@ -86,6 +86,7 @@ $env:ELECTRON_CUSTOM_DIR = '{{ version }}'
 `-SkipDshBuild` 会恢复 DSH 工作区依赖，但复用已准备的官方运行时；如已有 `.build/electron-launcher/PRTS Terrarchive.exe`，还会复用该启动器并强制进行真实启动测试。缓存缺失时仍需要上述 C++ 构建工具。
 
 新版构建器使用独立 `.build/dsh-electron-current` 源码副本，在固定提交上编译官方 Desktop 并保留 PRTS 窗口控制样式。它将本地 PRTS 包和所需 `zod` 封入官方内置运行时，重新生成完整性清单，再生成未签名的 Electron 应用目录。
+源码副本也会将首次启动的欢迎页、登录窗口和 Windows 任务栏标题设为 PRTS Terrarchive；欢迎页使用本仓库的 PRTS 插画与不透明背景。更新这些桌面界面后必须运行一次不带 `-SkipDshBuild` 的完整构建，缓存构建只会复用旧的前端资源。
 官方的 `prepare:package` 要求本地 `apps/desktop/.env.windows`，构建器会在源码副本缺少该文件时自动写入仅供准备流程使用的占位配置；无需填写签名或发布凭据。这些占位地址不会写入便携版应用的更新配置。如已自行配置该文件，构建器会保留原内容。
 组装后检查 Windows PE 架构、内置运行时和语料，并通过官方 Desktop Host 验证 PRTS 模式、皮肤资源与语料索引；冒烟测试不调用模型。验证失败不会生成正式 ZIP。
 构建时还会在含中文和空格的临时目录运行真实启动器，检查工作目录和参数传递。

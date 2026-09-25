@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="472" height="40" viewBox="0 0 472 40" fill="none">
+  <rect x="1" y="3" width="34" height="34" rx="9" fill="#171a1d"/>
+  <text x="10" y="29" fill="#fff" font-family="Consolas,monospace" font-size="25" font-weight="900" font-style="italic">P</text>
+  <text x="49" y="28" fill="#171a1d" font-family="Arial,Segoe UI,sans-serif" font-size="24" font-weight="800" letter-spacing="1">PRTS</text>
+  <path d="M128 8V32" stroke="#b3bdc4"/>
+  <text x="144" y="27" fill="#333b41" font-family="Consolas,monospace" font-size="16" font-weight="600" letter-spacing="1.5">TERRARCHIVE</text>
+  <path d="M316 20H454" stroke="#b3bdc4"/>
+  <rect x="449" y="16" width="8" height="8" fill="#6f8fcd"/>
+</svg>

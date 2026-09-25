@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { inspectPrtsTarball } from '../electron/inject-runtime.mjs'
-import { overlayCurrentChrome } from '../electron/source-overlay-current.mjs'
+import { overlayCurrentBranding, overlayCurrentChrome } from '../electron/source-overlay-current.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 function put(path, body = '') {
@@ -51,4 +51,38 @@ test('current pinned official Desktop keeps the original PRTS window controls', 
     assert.equal(overlayCurrentChrome(name, patched), patched)
     assert.throws(() => overlayCurrentChrome(name, '// changed upstream'), /anchor changed/u)
   }
+})
+
+
+test('current Desktop first-run artwork, copy and taskbar title use PRTS branding', t => {
+  const dsh = resolve(root, '../deepseek-harness')
+  const commit = JSON.parse(readFileSync(join(root, 'versions.electron.current.json'), 'utf8')).dsh.commit
+  if (!existsSync(join(dsh, '.git'))
+    || execFileSync('git', ['-C', dsh, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim() !== commit) {
+    t.skip('Pinned DSH source checkout is unavailable')
+    return
+  }
+  const paths = [
+    'scripts/client-build-environment.ts',
+    'apps/desktop/src/locale.ts',
+    'packages/client/ui-settings-account/src/client/locales/onboarding.ts',
+    'packages/client/ui-settings-account/src/client/OnboardingWelcomeStep.tsx',
+    'packages/client/ui-settings-account/src/client/OnboardingSurface.module.css',
+  ]
+  const branded = Object.fromEntries(paths.map(file => {
+    const source = readFileSync(join(dsh, file), 'utf8')
+    const patched = overlayCurrentBranding(file, source)
+    assert.notEqual(patched, source, file)
+    assert.equal(overlayCurrentBranding(file, patched), patched, file)
+    assert.throws(() => overlayCurrentBranding(file, '// upstream changed'), /anchor changed/u)
+    return [file, patched]
+  }))
+  assert.match(branded['scripts/client-build-environment.ts'], /DSH_CLIENT_TITLE: 'PRTS Terrarchive'/u)
+  assert.match(branded['apps/desktop/src/locale.ts'], /welcomeTitle: 'PRTS Terrarchive'/u)
+  assert.match(branded['packages/client/ui-settings-account/src/client/locales/onboarding.ts'], /onboardingBrand: 'PRTS Terrarchive'/u)
+  assert.match(branded['packages/client/ui-settings-account/src/client/OnboardingWelcomeStep.tsx'], /prts-onboarding\.svg/u)
+  assert.doesNotMatch(branded['packages/client/ui-settings-account/src/client/OnboardingWelcomeStep.tsx'], /onboarding-welcome(?:-zh|-dark)?\.png/u)
+  assert.match(branded['packages/client/ui-settings-account/src/client/OnboardingSurface.module.css'], /background: #f7f7f4/u)
+  assert.match(readFileSync(join(root, 'electron/assets/prts-onboarding.svg'), 'utf8'), /TERRA \/ ARCHIVE/u)
+  assert.match(readFileSync(join(root, 'electron/assets/prts-welcome-brand.svg'), 'utf8'), /TERRARCHIVE/u)
 })

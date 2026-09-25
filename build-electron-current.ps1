@@ -136,6 +136,11 @@ try {
                 throw 'Cached DSH build lacks the PRTS window controls. Run without -SkipDshBuild once.'
             }
         }
+        $ClientIndex = Join-Path $DshSource 'apps\web\dist\index.html'
+        Assert-File $ClientIndex 'compiled Desktop client'
+        if (-not (Get-Content -LiteralPath $ClientIndex -Raw).Contains('<title>PRTS Terrarchive</title>')) {
+            throw 'Compiled DSH client lacks PRTS welcome and taskbar branding. Run without -SkipDshBuild once.'
+        }
         Invoke-Checked -Command $Corepack -ArgumentList @('pnpm', 'exec', 'tsx',
             (Join-Path $RepositoryRoot 'electron\inject-runtime.mjs'), '--dsh-source', $DshSource,
             '--tarball', $PluginTarball)
