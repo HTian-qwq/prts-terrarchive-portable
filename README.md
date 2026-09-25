@@ -57,6 +57,16 @@ cd D:\ds\prts-terrarchive-portable
 需要 Windows x64、Node.js 22.19+（或 24+）、Corepack、Git、Windows `tar.exe`，以及
 Visual Studio 2022 Build Tools 17.1+ 的 Desktop development with C++ 工作负载和 Windows SDK。
 Electron 构建不使用 .NET SDK 或 WebView2。内置运行时由官方准备流程下载并校验。
+
+若 `prepare:runtime` 报 `TypeError: fetch failed`，表示官方准备流程未能下载 Electron 运行时。可在当前 PowerShell 会话中使用 Electron 文档列出的镜像，再重新运行完整构建：
+
+```powershell
+$env:ELECTRON_MIRROR = 'https://npmmirror.com/mirrors/electron/'
+$env:ELECTRON_CUSTOM_DIR = '{{ version }}'
+.\build-electron.ps1
+```
+
+构建器不会默认切换下载源；镜像设置只对当前 PowerShell 会话有效。之前的准备流程尚未完成时不要使用 `-SkipDshBuild`。
 小启动器使用 MSVC 静态链接，不要求用户另装 .NET 或 VC++ 运行库。
 [`versions.electron.current.json`](versions.electron.current.json) 固定新版 DSH 源码提交、构建 Node、pnpm 和 Electron 版本；[`versions.electron.json`](versions.electron.json) 继续固定旧版入口。
 本地插件源码必须包含新的 Electron 传输和预设注册支持。
