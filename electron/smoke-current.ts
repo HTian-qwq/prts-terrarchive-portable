@@ -5,8 +5,10 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
-import { DesktopProjectManager } from '../src/project-manager.ts'
-import { resolveDesktopPaths } from '../src/paths.ts'
+import { createPluginProfile } from '../src/project-manager.ts'
+import { readDesktopRuntime } from '../src/runtime-tree.ts'
+import { resolveDesktopTargetBuildPaths } from './desktop-build-paths.mjs'
+import { verifyRuntimeArchive } from './verify-runtime-archive.ts'
 import { DesktopHostProcess } from '../src/host-process.ts'
 import { authenticateWebHost } from '../src/web-document.ts'
 import { prepareCurrentProfile } from '../portable-main.mjs'
@@ -30,12 +32,16 @@ writeFileSync(join(home, 'cordis.patch.yml'), '- id: agent-preset-registry\n  co
 const client = join(artifact, 'client')
 const executable = join(client, 'PRTS Terrarchive.exe')
 const resources = join(client, 'resources')
-const dsh = join(resources, 'app.asar', 'dsh')
+const archive = join(resources, 'app.asar')
+const dsh = join(archive, 'dsh')
 const runtime = join(resources, 'runtime')
 let host: DesktopHostProcess | undefined
 try {
-  const manager = new DesktopProjectManager(resolveDesktopPaths(home), { dsh })
-  await manager.applyRelease()
+  // This smoke runs under Node, whose fs cannot traverse ASAR paths. Verify the
+  // archive directly, then let the Electron Node-mode Host load its virtual tree.
+  const prepared = resolveDesktopTargetBuildPaths({ DSH_DESKTOP_TARGET_PLATFORM: 'win32', DSH_DESKTOP_TARGET_ARCH: 'x64' })
+  await verifyRuntimeArchive(archive, readDesktopRuntime(prepared.dsh))
+  createPluginProfile(profile)
   host = new DesktopHostProcess(executable, dsh, profile, undefined, environment,
     undefined, join(runtime, 'primary-runtime'),
     { pnpm: join(runtime, 'pnpm', 'bin', 'pnpm.mjs'), nodeBin: join(runtime, 'bin') })
