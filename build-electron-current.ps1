@@ -110,6 +110,7 @@ try {
         if (-not $SkipDshBuild) {
             Invoke-Checked -Command $Corepack -ArgumentList @('pnpm', 'install', '--frozen-lockfile')
             Invoke-Checked -Command $Node -ArgumentList @((Join-Path $RepositoryRoot 'electron\source-overlay-current.mjs'), '--dsh-source', $DshSource)
+            Invoke-Checked -Command $Node -ArgumentList @((Join-Path $RepositoryRoot 'scripts\prepare-current-desktop-env.mjs'), $DshSource)
             Invoke-Checked -Command $Corepack -ArgumentList @('pnpm', '--filter', '@deepseek-ai/dsh-desktop', 'run', 'prepare:package')
         } else {
             Assert-File (Join-Path $TargetRoot 'dsh\desktop-runtime.json') 'prepared official Desktop runtime'

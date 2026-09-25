@@ -76,6 +76,7 @@ Electron 构建不使用 .NET SDK 或 WebView2。内置运行时由官方准备�
 `-SkipDshBuild` 仍会重新编译小启动器并更新便携适配，因此也需要上述 C++ 构建工具。
 
 新版构建器使用独立 `.build/dsh-electron-current` 源码副本，在固定提交上编译官方 Desktop 并保留 PRTS 窗口控制样式。它将本地 PRTS 包和所需 `zod` 封入官方内置运行时，重新生成完整性清单，再生成未签名的 Electron 应用目录。
+官方的 `prepare:package` 要求本地 `apps/desktop/.env.windows`，构建器会在源码副本缺少该文件时自动写入仅供准备流程使用的占位配置；无需填写签名或发布凭据。这些占位地址不会写入便携版应用的更新配置。如已自行配置该文件，构建器会保留原内容。
 组装后检查 Windows PE 架构、内置运行时和语料，并通过官方 Desktop Host 验证 PRTS 模式、皮肤资源与语料索引；冒烟测试不调用模型。验证失败不会生成正式 ZIP。
 构建时还会在含中文和空格的临时目录运行真实启动器，检查工作目录和参数传递。
 `-SkipSmoke` 只用于排查构建环境问题，正常发行应运行默认检查。要重建 0.1.5 旧 Electron 包，请执行 `build-electron-legacy.ps1`。
