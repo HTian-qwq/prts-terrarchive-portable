@@ -21,26 +21,35 @@ function put(path, value) {
 
 const hash = (value) => createHash('sha256').update(value).digest('hex')
 
-function corpusFixture(t) {
+function corpusFixture(t, { localization = false } = {}) {
   const root = temporaryRoot(t)
   const releasesDir = join(root, 'cache')
   const targetDir = join(root, 'artifact')
   const releaseId = 'selected-release'
+  const packId = localization ? 'endfield_official_game' : 'official_game'
   const manifest = { release_id: releaseId, data_version: 'a'.repeat(64), document_count: 1 }
   const pointer = { release_id: releaseId, data_version: manifest.data_version }
   const files = {
     'shards/00000.jsonl.gz': 'verified shard',
     'search-index/00000.bin.gz': 'verified index',
     'catalog/documents.jsonl.gz': 'verified catalog',
+    ...(localization ? {
+      'localization/catalog.jsonl.gz': 'verified localization catalog',
+      'localization/CN.jsonl.gz': 'verified Chinese localization',
+      'localization/EN.jsonl.gz': 'verified English localization',
+    } : {}),
   }
   const asset = (path) => ({ path, sha256: hash(files[path]) })
   const pack = { shards: [asset('shards/00000.jsonl.gz')],
     search_index: { shards: [asset('search-index/00000.bin.gz')] },
-    document_catalog: asset('catalog/documents.jsonl.gz') }
+    document_catalog: asset('catalog/documents.jsonl.gz'),
+    ...(localization ? { localization: { catalog: asset('localization/catalog.jsonl.gz'),
+      languages: { CN: asset('localization/CN.jsonl.gz'), EN: asset('localization/EN.jsonl.gz') } } } : {}),
+  }
   put(join(releasesDir, 'current.json'), pointer)
   put(join(releasesDir, releaseId, 'release-manifest.json'), manifest)
-  put(join(releasesDir, releaseId, 'official_game/pack-manifest.json'), pack)
-  for (const [path, value] of Object.entries(files)) put(join(releasesDir, releaseId, 'official_game', path), value)
+  put(join(releasesDir, releaseId, packId, 'pack-manifest.json'), pack)
+  for (const [path, value] of Object.entries(files)) put(join(releasesDir, releaseId, packId, path), value)
   let locked = false
   const validations = []
   // 安装器替身只负责已有的锁和 SHA 校验接口，封装文件选择由被测模块完成。
@@ -60,16 +69,16 @@ function corpusFixture(t) {
       assert.equal(options.verifyHashes, true)
       validations.push(path)
       for (const [file, bytes] of Object.entries(files)) {
-        assert.equal(hash(readFileSync(join(path, releaseId, 'official_game', file))), hash(bytes),
+        assert.equal(hash(readFileSync(join(path, releaseId, packId, file))), hash(bytes),
           '不得封装或激活哈希不匹配的分片')
       }
       assert.deepEqual(JSON.parse(readFileSync(join(path, releaseId, 'release-manifest.json'))), manifest)
-      assert.deepEqual(JSON.parse(readFileSync(join(path, releaseId, 'official_game/pack-manifest.json'))), pack)
-      return options.details ? { manifest, packManifests: new Map([['official_game', pack]]),
+      assert.deepEqual(JSON.parse(readFileSync(join(path, releaseId, packId, 'pack-manifest.json'))), pack)
+      return options.details ? { manifest, packManifests: new Map([[packId, pack]]),
         releaseDir: join(path, releaseId) } : manifest
     },
   }
-  return { releasesDir, targetDir, releaseId, manifest, pointer, files, installer, validations }
+  return { releasesDir, targetDir, releaseId, packId, manifest, pointer, files, installer, validations }
 }
 
 function relativeFiles(root, prefix = '') {
@@ -93,6 +102,17 @@ test('语料发行只收录当前清单资产，排除旧版本、失败下载�
     ...Object.keys(files).map((file) => `${releaseId}/official_game/${file}`)].sort())
   assert.deepEqual(validations, [releasesDir, targetDir], '来源和成品都必须逐文件校验')
   assert.deepEqual(JSON.parse(readFileSync(join(targetDir, 'current.json'))), pointer)
+})
+
+test('终末地本地化附件随清单复制，未列出的文件不进入发行版', async (t) => {
+  const fixture = corpusFixture(t, { localization: true })
+  const { releasesDir, targetDir, releaseId, packId, files } = fixture
+  put(join(releasesDir, releaseId, packId, 'localization/old.tmp'), 'unlisted')
+  await packageCurrentCorpus(fixture)
+  assert.deepEqual(relativeFiles(targetDir), ['current.json', `${releaseId}/release-manifest.json`,
+    `${releaseId}/${packId}/pack-manifest.json`,
+    ...Object.keys(files).map(file => `${releaseId}/${packId}/${file}`)].sort())
+  assert.equal(existsSync(join(targetDir, releaseId, packId, 'localization/old.tmp')), false)
 })
 
 test('来源校验失败或指针不一致时不能产出可激活的 current', async (t) => {

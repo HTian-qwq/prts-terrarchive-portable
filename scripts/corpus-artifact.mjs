@@ -21,7 +21,8 @@ export async function packageCurrentCorpus({ releasesDir, targetDir, installer }
     for (const [packId, pack] of packManifests) {
       files.push(`${packId}/pack-manifest.json`)
       const assets = [...pack.shards, ...(pack.search_index?.shards ?? []),
-        ...(pack.document_catalog ? [pack.document_catalog] : [])]
+        ...(pack.document_catalog ? [pack.document_catalog] : []),
+        ...(pack.localization ? [pack.localization.catalog, ...Object.values(pack.localization.languages)] : [])]
       files.push(...assets.map((asset) => `${packId}/${asset.path}`))
     }
     for (const file of files) {
