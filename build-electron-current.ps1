@@ -62,11 +62,17 @@ if (-not ($BuildVersion.Major -ge 24 -or ($BuildVersion.Major -eq 22 -and $Build
     throw 'Building DSH requires Node.js 22.19+ or 24+.'
 }
 
-Write-Host 'Building the small portable launcher...' -ForegroundColor Cyan
-& (Join-Path $RepositoryRoot 'electron\build-launcher.ps1') -OutputDirectory $LauncherDirectory
 $Launcher = Join-Path $LauncherDirectory 'PRTS Terrarchive.exe'
+$ReuseLauncher = $SkipDshBuild -and (Test-Path -LiteralPath $Launcher -PathType Leaf)
+if ($ReuseLauncher) {
+    Write-Host 'Reusing the cached portable launcher and checking it against this Node toolchain...' -ForegroundColor Cyan
+} else {
+    Write-Host 'Building the small portable launcher...' -ForegroundColor Cyan
+    & (Join-Path $RepositoryRoot 'electron\build-launcher.ps1') -OutputDirectory $LauncherDirectory
+}
 Assert-File $Launcher 'native portable launcher'
-if (-not $SkipSmoke) {
+# A reused binary must always pass the real Windows execution probe, even with -SkipSmoke.
+if ($ReuseLauncher -or -not $SkipSmoke) {
     Invoke-Checked -Command $Node -ArgumentList @((Join-Path $RepositoryRoot 'electron\smoke-launcher.mjs'), '--launcher', $Launcher, '--node', $Node)
 }
 
