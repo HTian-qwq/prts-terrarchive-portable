@@ -61,6 +61,12 @@ Electron 构建不使用 .NET SDK 或 WebView2。内置运行时由官方准备�
 [`versions.electron.current.json`](versions.electron.current.json) 固定新版 DSH 源码提交、构建 Node、pnpm 和 Electron 版本；[`versions.electron.json`](versions.electron.json) 继续固定旧版入口。
 本地插件源码必须包含新的 Electron 传输和预设注册支持。
 
+构建器优先使用相邻的 `deepseek-harness` 源码仓库复制固定提交，避免重复从 GitHub 下载；若没有该提交才联网拉取，并在断线后清理不完整缓存重试。源码在其他位置时可指定：
+
+```powershell
+.\build-electron.ps1 -LocalDshSource D:\ds\deepseek-harness
+```
+
 ```powershell
 .\build-electron.ps1 -ToolsRoot D:\toolchains -PluginPath D:\src\prts-terrarchive
 # 已完成一次构建后，复用准备好的官方运行时与安装材料：

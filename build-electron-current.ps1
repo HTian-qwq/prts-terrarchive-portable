@@ -1,6 +1,7 @@
 param(
     [string]$ToolsRoot = (Join-Path (Split-Path -Parent $PSScriptRoot) '.tools'),
     [string]$PluginPath = (Join-Path (Split-Path -Parent $PSScriptRoot) 'prts-terrarchive'),
+    [string]$LocalDshSource = '',
     [switch]$SkipDshBuild,
     [switch]$SkipSmoke
 )
@@ -69,11 +70,9 @@ if (-not $SkipSmoke) {
     Invoke-Checked -Command $Node -ArgumentList @((Join-Path $RepositoryRoot 'electron\smoke-launcher.mjs'), '--launcher', $Launcher, '--node', $Node)
 }
 
-if (-not (Test-Path -LiteralPath (Join-Path $DshSource '.git'))) {
-    Write-Host 'Fetching the pinned official DSH 0.1.7 Electron source...' -ForegroundColor Cyan
-    Invoke-Checked -Command git -ArgumentList @('clone', '--branch', ([string]$Versions.dsh.tag), '--depth', '1',
-        'https://github.com/deepseek-ai/deepseek-harness.git', $DshSource)
-}
+$SourceArguments = @((Join-Path $RepositoryRoot 'scripts\prepare-current-dsh-source.mjs'))
+if ($LocalDshSource) { $SourceArguments += @('--local-source', $LocalDshSource) }
+Invoke-Checked -Command $Node -ArgumentList $SourceArguments
 $ActualCommit = & git -C $DshSource rev-parse HEAD
 if ($LASTEXITCODE -ne 0 -or $ActualCommit.Trim() -ne [string]$Versions.dsh.commit) {
     throw 'The current Electron source cache does not match versions.electron.current.json. Use a fresh .build\dsh-electron-current directory.'
