@@ -107,8 +107,9 @@ try {
     $env:PRTS_ELECTRON_OUTPUT = $ElectronOutput
     Push-Location $DshSource
     try {
+        # The cached runtime does not guarantee that workspace CLI shims (tsx, electron-builder) still exist.
+        Invoke-Checked -Command $Corepack -ArgumentList @('pnpm', 'install', '--frozen-lockfile')
         if (-not $SkipDshBuild) {
-            Invoke-Checked -Command $Corepack -ArgumentList @('pnpm', 'install', '--frozen-lockfile')
             Invoke-Checked -Command $Node -ArgumentList @((Join-Path $RepositoryRoot 'electron\source-overlay-current.mjs'), '--dsh-source', $DshSource)
             Invoke-Checked -Command $Node -ArgumentList @((Join-Path $RepositoryRoot 'scripts\prepare-current-desktop-env.mjs'), $DshSource)
             Invoke-Checked -Command $Corepack -ArgumentList @('pnpm', '--filter', '@deepseek-ai/dsh-desktop', 'run', 'prepare:package')
