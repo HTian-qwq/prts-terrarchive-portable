@@ -85,6 +85,14 @@ if ($LASTEXITCODE -ne 0 -or $ActualCommit.Trim() -ne [string]$Versions.dsh.commi
 }
 $DshPackage = Get-Content (Join-Path $DshSource 'package.json') -Raw | ConvertFrom-Json
 if ([string]$DshPackage.version -ne [string]$Versions.dsh.version) { throw 'The cached DSH version does not match the pin.' }
+# 清掉之前运行残留在缓存源码树里的 wrapper overlay 文件；
+# 否则完整构建的 tsc 会把这些无类型声明的 .mjs 当源码检查（TS7016/TS7006）。
+Remove-Item -LiteralPath `
+    (Join-Path $DshSource 'apps\desktop\portable-main.mjs'), `
+    (Join-Path $DshSource 'apps\desktop\prts-builder-config.mjs'), `
+    (Join-Path $DshSource 'apps\desktop\scripts\prts-smoke-current.ts'), `
+    (Join-Path $DshSource 'apps\desktop\scripts\prts-smoke-corpus.mjs') `
+    -Force -ErrorAction SilentlyContinue
 Invoke-Checked -Command $Corepack -ArgumentList @('prepare', "pnpm@$($Versions.pnpm)", '--activate')
 
 Write-Host 'Resolving and verifying the complete current PRTS corpus...' -ForegroundColor Cyan

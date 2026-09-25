@@ -42,6 +42,24 @@ function assertRegularPackageTree(directory) {
   }
 }
 
+/** electron-builder packs node_modules in the ASAR by rewriting every package.json into
+ *  a normalized form (removing keywords/bugs/scripts, 2-space indentation, no trailing newline).
+ *  The runtime inventory verifies by bytes, so the local copy on disk must first be written in the same form,
+ *  otherwise the smoke test's ASAR integrity verification will inevitably fail. */
+function normalizeModuleManifests(root) {
+  for (const entry of readdirSync(root)) {
+    const path = join(root, entry)
+    if (lstatSync(path).isDirectory()) normalizeModuleManifests(path)
+  }
+  const manifestPath = join(root, 'package.json')
+  if (!existsSync(manifestPath)) return
+  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+  delete manifest.keywords
+  delete manifest.bugs
+  delete manifest.scripts
+  writeFileSync(manifestPath, JSON.stringify(manifest, null, 2))
+}
+
 export async function injectPortableRuntime({ dshSource, tarball }) {
   const source = resolve(dshSource)
   const versions = JSON.parse(readFileSync(new URL('../versions.electron.current.json', import.meta.url), 'utf8'))
@@ -77,6 +95,7 @@ export async function injectPortableRuntime({ dshSource, tarball }) {
     mkdirSync(join(plugin, 'node_modules'), { recursive: true })
     cpSync(zodPath, join(plugin, 'node_modules', 'zod'), { recursive: true, dereference: true })
     assertRegularPackageTree(join(plugin, 'node_modules', 'zod'))
+    normalizeModuleManifests(plugin)
     const dshManifestPath = join(runtime, 'node_modules', '@deepseek-ai', 'dsh', 'package.json')
     const dshManifest = JSON.parse(readFileSync(dshManifestPath, 'utf8'))
     dshManifest.dependencies = { ...dshManifest.dependencies, [packed.name]: packed.version }
