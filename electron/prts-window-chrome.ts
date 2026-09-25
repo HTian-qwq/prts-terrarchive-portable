@@ -4,7 +4,7 @@ import { ipcMain, Menu, type BrowserWindow, type IpcMainEvent } from 'electron'
 const ACTION_CHANNEL = 'prts-shell:window-action'
 const STATE_CHANNEL = 'prts-shell:window-state'
 
-export function installPrtsWindowChrome(window: BrowserWindow, openPlugins?: () => void): void {
+export function installPrtsWindowChrome(window: BrowserWindow, openPlugins?: () => void, openMenu?: () => void): void {
   // Keep the official application menu available as a popup without a menu-bar row.
   window.setMenu(null)
   const contents = window.webContents
@@ -28,7 +28,7 @@ export function installPrtsWindowChrome(window: BrowserWindow, openPlugins?: () 
     if (url.protocol !== 'dsh-app:' || url.hostname !== 'app') return
     switch (action) {
       case 'state': publishState(); break
-      case 'menu': Menu.getApplicationMenu()?.popup({ window }); break
+      case 'menu': if (openMenu) openMenu(); else Menu.getApplicationMenu()?.popup({ window }); break
       case 'minimize': window.minimize(); break
       case 'maximize': toggleMaximize(); break
       case 'close': window.close(); break

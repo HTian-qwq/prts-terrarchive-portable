@@ -52,6 +52,45 @@ test('官方主程序加载前，数据、浏览器会话和完整语料路径�
   assert(mainLoaded)
 })
 
+test('新版官方 Desktop 首次启动使用内置 PRTS bundle，并保留之后的用户选择', (t) => {
+  const root = temporary(t)
+  const branding = { ...versions, layout: 'client-v2' }
+  const data = join(root, 'userdata')
+  const run = () => configurePortableElectron(application(), {
+    executable: join(root, 'client', 'PRTS Terrarchive.exe'), environment: {}, branding,
+  })
+  run()
+  const manifestPath = join(data, 'profiles', 'desktop', 'package.json')
+  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+  assert.deepEqual(manifest.dsh.profile.bundles,
+    ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', 'prts-terrarchive'])
+  assert.match(readFileSync(join(data, 'cordis.patch.yml'), 'utf8'), /- id: agent-preset-registry\s+config:\s+default: prts/u)
+  manifest.dsh.profile.bundles.pop()
+  writeFileSync(manifestPath, JSON.stringify(manifest))
+  run()
+  assert.deepEqual(JSON.parse(readFileSync(manifestPath, 'utf8')).dsh.profile.bundles,
+    ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'])
+})
+
+test('升级旧版 Electron 时备份旧安装式 profile 并迁移默认模式 patch', (t) => {
+  const root = temporary(t)
+  const data = join(root, 'userdata')
+  const profile = join(data, 'profiles', 'desktop')
+  mkdirSync(profile, { recursive: true })
+  writeFileSync(join(profile, 'package.json'), JSON.stringify({
+    name: '@deepseek-ai/dsh-desktop-runtime', dependencies: { '@deepseek-ai/dsh': '0.1.5-alpha.1' },
+  }))
+  writeFileSync(join(profile, 'user-plugin.txt'), 'keep me')
+  writeFileSync(join(data, 'cordis.patch.yml'), '# Portable first-run mode; existing user settings take priority.\n- id: agent-presets\n  config:\n    default: prts\n')
+  configurePortableElectron(application(), {
+    executable: join(root, 'client', 'PRTS Terrarchive.exe'), environment: {},
+    branding: { ...versions, layout: 'client-v2' },
+  })
+  assert.equal(readFileSync(join(data, 'profiles', 'desktop.pre-0.1.7', 'user-plugin.txt'), 'utf8'), 'keep me')
+  assert.equal(JSON.parse(readFileSync(join(profile, 'package.json'), 'utf8')).name, 'dsh-profile-desktop')
+  assert.match(readFileSync(join(data, 'cordis.patch.yml'), 'utf8'), /agent-preset-registry/u)
+})
+
 test('再次启动完整保留用户的模式、皮肤及手写配置', (t) => {
   const root = temporary(t)
   const data = join(root, 'userdata')

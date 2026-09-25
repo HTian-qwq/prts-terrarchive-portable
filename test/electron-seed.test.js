@@ -12,13 +12,15 @@ import { applySourceOverlay, overlaySource } from '../electron/source-overlay.mj
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)))
 const dsh = resolve(process.env.PRTS_DSH_SOURCE || join(root, '../deepseek-harness'))
+const legacyCommit = JSON.parse(readFileSync(join(root, 'versions.electron.json'), 'utf8')).dsh.commit
+const actualCommit = existsSync(join(dsh, '.git')) ? execFileSync('git', ['-C', dsh, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim() : ''
 const pnpmCandidates = [process.env.PRTS_PNPM_ENTRY,
   join(dsh, 'apps/desktop/node_modules/pnpm/bin/pnpm.mjs'),
   join(dsh, 'node_modules/pnpm/bin/pnpm.mjs'),
   join(process.env.HOME || '', '.local/share/pnpm/.tools/pnpm/11.7.0/node_modules/pnpm/bin/pnpm.mjs'),
 ].filter(Boolean)
 const pnpm = pnpmCandidates.find(path => existsSync(path))
-const supported = existsSync(join(dsh, 'apps/desktop/src/project-manager.ts')) && pnpm
+const supported = actualCommit === legacyCommit && existsSync(join(dsh, 'apps/desktop/src/project-manager.ts')) && pnpm
 const integration = (name, fn) => test(name, {
   skip: supported ? false : 'Set PRTS_DSH_SOURCE and PRTS_PNPM_ENTRY for real official Desktop + pnpm integration',
 }, fn)

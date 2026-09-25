@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
+import { execFileSync } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -11,7 +12,9 @@ import { overlaySource } from '../electron/source-overlay.mjs'
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)))
 const dsh = resolve(process.env.PRTS_DSH_SOURCE || join(root, '../deepseek-harness'))
-const supported = existsSync(join(dsh, 'node_modules/tsx/package.json'))
+const legacyCommit = JSON.parse(readFileSync(join(root, 'versions.electron.json'), 'utf8')).dsh.commit
+const actualCommit = existsSync(join(dsh, '.git')) ? execFileSync('git', ['-C', dsh, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim() : ''
+const supported = actualCommit === legacyCommit && existsSync(join(dsh, 'node_modules/tsx/package.json'))
 const integration = (name, fn) => test(name, { skip: !supported && 'Set PRTS_DSH_SOURCE to an installed DSH workspace' }, fn)
 let buildSync
 if (supported) {

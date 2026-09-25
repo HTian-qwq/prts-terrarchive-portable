@@ -19,27 +19,28 @@ Node.js、固定版本 DeepSeek Harness、`prts-terrarchive`、PRTS 预设和完
 
 | 构建入口 | 桌面客户端 | DSH | 完整语料 |
 | --- | --- | --- | --- |
-| `build-electron.ps1` | 官方 Electron 源码，社区便携封装 | `0.1.5-alpha.1` | 随包提供 |
+| `build-electron.ps1` | 官方 Electron 源码，社区便携封装 | `0.1.7-rc.2` | 随包提供 |
+| `build-electron-legacy.ps1` | 旧 Electron 构建入口 | `0.1.5-alpha.1` | 随包提供 |
 | `build-local.ps1` | 原 WinForms / WebView2 | `0.1.3-alpha.1` | 随包提供 |
 
 Electron 版沿用旧便携版的无边框窗口设计：PRTS Agent 使用浅色半透明圆角控制栏，
-Endfield AIC 使用黑底荧光黄切角控制栏，随皮肤选择即时切换。右上角应用菜单保留官方
-插件管理入口，也可按 `Ctrl+,` 打开；顶部可拖动窗口，方框按钮最大化或还原，
+Endfield AIC 使用黑底荧光黄切角控制栏，随皮肤选择即时切换。右上角应用菜单可打开官方菜单；顶部可拖动窗口，方框按钮最大化或还原，
 `F11` 切换全屏，`Esc` 退出全屏。原生目录选择器、插件管理器和 Host 通信沿用官方实现。
 便携封装把 Harness 会话、设置、凭据及 Electron 浏览器数据放在发行包根目录的 `userdata/`，首次默认
 使用 PRTS 模式与 PRTS Agent 皮肤。既有用户的模式和皮肤选择会保留。
-Windows 上关闭最后一个窗口会按官方客户端的行为退出应用。
+Windows 上主窗口关闭后按新版官方客户端的行为隐藏至后台，可从托盘退出。
 
 语料仍从 PRTS.chat `current` 选择，逐文件校验后放入 `corpus/releases/`。发行包只包含
 选定版本清单中的资产，不会带入构建缓存里的整套历史语料。安装插件不需要用户访问 npm；
-首次启动会从包内文件准备本地运行环境。后续语料更新仍可在“插件 → PRTS 语料”中完成。
+插件和其固定版本的 `zod` 依赖已内置在官方 Desktop 运行时中；首次启动无需在线安装。后续语料更新仍可在 PRTS 设置页完成。
 
 这是社区构建的便携 ZIP，不使用深度求索的桌面自动更新源，也不需要官方签名或上传凭据。
 桌面程序更新通过下载新版完整 ZIP 完成；已有 `userdata/` 不应作为发行内容分享或覆盖。
 新版根目录的 EXE 是小型原生启动器，Electron 主程序、DLL、语言包和离线安装材料统一放入
 `client/`。这只整理文件位置，不会缩减 Electron 运行时或完整语料，压缩包总体积基本不变。
 升级时先退出旧程序，将新版解压到新目录，再把原 `userdata/` 复制到新版根目录；若曾更新过
-语料，也请保留原 `corpus/`。旧根目录的 `resources/`、DLL、pak 等程序文件不需要复制。
+语料，也请保留原 `corpus/`。从 0.1.5 Electron 升级时，旧安装式 Desktop profile 会完整备份为
+`userdata/profiles/desktop.pre-0.1.7/`，新版自动建立内置 PRTS 的 profile；旧版额外安装的第三方插件须在新版重新安装。旧根目录的 `resources/`、DLL、pak 等程序文件不需要复制。
 直接打开 `client/` 内的主程序也会使用根目录的语料和用户数据；请保持完整目录结构。
 新入口生成独立的 Electron 成品目录；若构建输出中已有用户数据，构建器保留该目录，
 另行生成新的 ZIP 和暂存目录。
@@ -57,7 +58,7 @@ cd D:\ds\prts-terrarchive-portable
 Visual Studio 2022 Build Tools 17.1+ 的 Desktop development with C++ 工作负载和 Windows SDK。
 Electron 构建不使用 .NET SDK 或 WebView2。内置运行时由官方准备流程下载并校验。
 小启动器使用 MSVC 静态链接，不要求用户另装 .NET 或 VC++ 运行库。
-[`versions.electron.json`](versions.electron.json) 固定 DSH 源码提交、Node、pnpm 和 Electron 版本。
+[`versions.electron.current.json`](versions.electron.current.json) 固定新版 DSH 源码提交、构建 Node、pnpm 和 Electron 版本；[`versions.electron.json`](versions.electron.json) 继续固定旧版入口。
 本地插件源码必须包含新的 Electron 传输和预设注册支持。
 
 ```powershell
@@ -68,12 +69,10 @@ Electron 构建不使用 .NET SDK 或 WebView2。内置运行时由官方准备�
 
 `-SkipDshBuild` 仍会重新编译小启动器并更新便携适配，因此也需要上述 C++ 构建工具。
 
-构建器使用独立 `.build/dsh-electron` 源码副本，应用本项目维护的便携适配，运行官方
-构建、打包和离线安装校验，加入本地 PRTS 包，再生成未签名的 Electron 应用目录。
-组装后检查 Windows PE 架构、安装文件完整性和语料，并通过官方 Desktop Host 创建
-空 PRTS 会话进行冒烟测试；测试不调用模型。验证失败不会生成正式 ZIP。
+新版构建器使用独立 `.build/dsh-electron-current` 源码副本，在固定提交上编译官方 Desktop 并保留 PRTS 窗口控制样式。它将本地 PRTS 包和所需 `zod` 封入官方内置运行时，重新生成完整性清单，再生成未签名的 Electron 应用目录。
+组装后检查 Windows PE 架构、内置运行时和语料，并通过官方 Desktop Host 验证 PRTS 模式、皮肤资源与语料索引；冒烟测试不调用模型。验证失败不会生成正式 ZIP。
 构建时还会在含中文和空格的临时目录运行真实启动器，检查工作目录和参数传递。
-`-SkipSmoke` 只用于排查构建环境问题，正常发行应运行默认检查。
+`-SkipSmoke` 只用于排查构建环境问题，正常发行应运行默认检查。要重建 0.1.5 旧 Electron 包，请执行 `build-electron-legacy.ps1`。
 
 ```text
 dist/PRTS-Terrarchive-Electron-windows-x64/
@@ -82,9 +81,9 @@ dist/PRTS-Terrarchive-Electron-windows-x64/
 │  ├─ PRTS Terrarchive.exe    # Electron 主程序
 │  ├─ *.dll、*.pak、locales/  # Electron 运行时文件
 │  └─ resources/
-│     ├─ app.asar            # 官方客户端及便携适配
-│     ├─ runtime/            # 内置 Node.js 和 pnpm
-│     └─ seed/               # 离线安装材料，包含 PRTS 插件
+│     ├─ app.asar            # 官方客户端、dsh/ 运行时及 PRTS 插件
+│     ├─ app.asar.unpacked/  # 原生模块
+│     └─ runtime/            # 内置 Node.js 和 pnpm
 ├─ corpus/releases/          # 完整、已校验的当前语料
 ├─ userdata/                 # 用户运行后创建，不进入 ZIP
 ├─ LICENSES/

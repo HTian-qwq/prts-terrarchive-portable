@@ -112,7 +112,7 @@ function fixture(t) {
   versions.dsh.commit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: dshSource, encoding: 'utf8' }).trim()
   // Real package installer/compatibility code validates our seven tiny gzip packs.
   const packageRoot = join(root, 'npm/package')
-  for (const name of ['src/installer.js', 'src/release-compatibility.js', 'package.json', 'cordis.patch.yml',
+  for (const name of ['src/installer.js', 'src/release-compatibility.js', 'src/localization-format.js', 'package.json', 'cordis.patch.yml',
     'presets/register.js', 'presets/prts/preset.yml', 'presets/prts/agent.cordis.yml', 'skills/prts-retrieval/SKILL.md',
     'LICENSE', 'THIRD_PARTY_NOTICES.md', 'GAME_ASSETS.md']) {
     put(join(packageRoot, name), readFileSync(join(pluginRoot, name)))
