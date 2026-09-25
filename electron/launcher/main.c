@@ -26,6 +26,11 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE previous, PWSTR arguments, int
     DWORD error;
     (void)instance; (void)previous; (void)show;
 
+    /* lpCmdLine is normally non-NULL, but guard defensively: some non-CRT
+       invocation paths may pass NULL, which would otherwise dereference a
+       NULL pointer in wcslen()/_snwprintf_s() below. */
+    if (arguments == NULL) arguments = L"";
+
     length = GetModuleFileNameW(NULL, root, PATH_CAPACITY);
     if (length == 0 || length >= PATH_CAPACITY)
         return fail(L"无法定位便携版所在目录。", GetLastError());
