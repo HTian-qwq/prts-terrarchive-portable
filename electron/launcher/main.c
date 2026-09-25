@@ -49,9 +49,11 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE previous, PWSTR arguments, int
     if (!CreateProcessW(client, command, NULL, NULL, FALSE, 0, NULL, root, &startup, &process)) {
         error = GetLastError();
         free(command);
+        command = NULL;
         return fail(L"无法启动 client\\PRTS Terrarchive.exe。\n请完整解压便携版，保留 client 文件夹及其中的全部文件。", error);
     }
     free(command);
+    command = NULL;
     CloseHandle(process.hThread);
     CloseHandle(process.hProcess);
     return 0;
