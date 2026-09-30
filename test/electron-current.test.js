@@ -15,7 +15,7 @@ function put(path, body = '') {
   writeFileSync(path, body)
 }
 
-test('current Electron injection accepts pinned PRTS dependencies including the legacy zod-only bundle', t => {
+test('current Electron injection accepts self-contained PRTS and pinned legacy dependencies', t => {
   const dir = mkdtempSync(join(tmpdir(), 'prts-current-package-'))
   t.after(() => rmSync(dir, { recursive: true, force: true }))
   const packageDir = join(dir, 'package')
@@ -31,6 +31,17 @@ test('current Electron injection accepts pinned PRTS dependencies including the 
     return archive
   }
   assert.equal(inspectPrtsTarball(pack()).dependencies.zod, '4.4.3')
+  delete manifest.dependencies
+  assert.throws(() => inspectPrtsTarball(pack()), /missing its bundled runtime/)
+  for (const file of ['yaml.js', 'zod.js', 'versions.json', 'licenses/js-yaml-MIT.txt', 'licenses/zod-MIT.txt']) {
+    put(join(packageDir, 'lib/runtime', file))
+  }
+  assert.equal(inspectPrtsTarball(pack()).dependencies, undefined)
+  // A current bundle needs no external dependency tree at build time either.
+  embedPrtsDependencies(packageDir, join(dir, 'unavailable-workspace'))
+  assert.equal(existsSync(join(packageDir, 'node_modules')), false)
+  manifest.dependencies = { zod: '4.4.3' }
+
   manifest.dependencies.zod = '^4.4.3'
   assert.throws(() => inspectPrtsTarball(pack()), /zod 4\.4\.3/u)
   manifest.dependencies = { zod: '4.4.3', 'js-yaml': '4.3.1' }

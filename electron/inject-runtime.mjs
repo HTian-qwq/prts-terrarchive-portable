@@ -8,7 +8,8 @@ import { pathToFileURL } from 'node:url'
 import { parseArgs } from 'node:util'
 
 /** Embed the supported dependency closure, including js-yaml's parser CLI dependency. */
-export function embedPrtsDependencies(plugin, source, dependencies) {
+export function embedPrtsDependencies(plugin, source, dependencies = {}) {
+  if (!Object.keys(dependencies).length) return // Current packages ship lib/runtime directly.
   const copy = (name, version, resolver) => {
     const path = dirname(realpathSync(resolver.resolve(name + '/package.json')))
     const manifest = JSON.parse(readFileSync(join(path, 'package.json'), 'utf8'))
@@ -47,13 +48,18 @@ export function inspectPrtsTarball(tarball) {
     encoding: 'utf8', maxBuffer: 1024 * 1024,
   }))
   const dependencies = manifest.dependencies ?? {}
-  const supportedDependencies = dependencies.zod === '4.4.3'
+  const selfContained = Object.keys(dependencies).length === 0
+  if (selfContained && !['yaml.js', 'zod.js', 'versions.json', 'licenses/js-yaml-MIT.txt', 'licenses/zod-MIT.txt']
+    .every(file => entries.includes('package/lib/runtime/' + file))) {
+    throw new Error('PRTS tarball is missing its bundled runtime libraries or notices')
+  }
+  const supportedDependencies = selfContained || dependencies.zod === '4.4.3'
     && Object.keys(dependencies).every(name => name === 'zod' || name === 'js-yaml')
     && (dependencies['js-yaml'] === undefined || dependencies['js-yaml'] === '4.3.1')
   if (manifest.name !== 'prts-terrarchive' || typeof manifest.version !== 'string'
     || manifest.dsh?.bundle?.patch !== './cordis.patch.yml'
     || !supportedDependencies) {
-    throw new Error('PRTS tarball must be the pinned prts-terrarchive Desktop bundle with zod 4.4.3 and optional js-yaml 4.3.1')
+    throw new Error('PRTS tarball must include its runtime libraries or declare legacy zod 4.4.3 and optional js-yaml 4.3.1')
   }
   return manifest
 }
