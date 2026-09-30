@@ -19,7 +19,7 @@ Node.js、固定版本 DeepSeek Harness、`prts-terrarchive`、PRTS 预设和完
 
 | 构建入口 | 桌面客户端 | DSH | 完整语料 |
 | --- | --- | --- | --- |
-| `build-electron.ps1` | 官方 Electron 源码，社区便携封装 | `0.1.7-rc.2` | 随包提供 |
+| `build-electron.ps1` | 官方 Electron 源码，社区便携封装 | `0.2.0-rc.1` | 随包提供 |
 | `build-electron-legacy.ps1` | 旧 Electron 构建入口 | `0.1.5-alpha.1` | 随包提供 |
 | `build-local.ps1` | 原 WinForms / WebView2 | `0.1.3-alpha.1` | 随包提供 |
 
@@ -32,7 +32,7 @@ Windows 上主窗口关闭后按新版官方客户端的行为隐藏至后台，
 
 语料仍从 PRTS.chat `current` 选择，逐文件校验后放入 `corpus/releases/`。发行包只包含
 选定版本清单中的资产，不会带入构建缓存里的整套历史语料。安装插件不需要用户访问 npm；
-插件和其固定版本的 `zod` 依赖已内置在官方 Desktop 运行时中；首次启动无需在线安装。后续语料更新仍可在 PRTS 设置页完成。
+插件和其固定版本的 `zod`、`js-yaml`（含 `argparse`）依赖已内置在官方 Desktop 运行时中；首次启动无需在线安装。后续语料更新仍可在 PRTS 设置页完成。
 
 这是社区构建的便携 ZIP，不使用深度求索的桌面自动更新源，也不需要官方签名或上传凭据。
 桌面程序更新通过下载新版完整 ZIP 完成；已有 `userdata/` 不应作为发行内容分享或覆盖。
@@ -85,7 +85,7 @@ $env:ELECTRON_CUSTOM_DIR = '{{ version }}'
 
 `-SkipDshBuild` 会恢复 DSH 工作区依赖，但复用已准备的官方运行时；如已有 `.build/electron-launcher/PRTS Terrarchive.exe`，还会复用该启动器并强制进行真实启动测试。缓存缺失时仍需要上述 C++ 构建工具。
 
-新版构建器使用独立 `.build/dsh-electron-current` 源码副本，在固定提交上编译官方 Desktop 并保留 PRTS 窗口控制样式。它将本地 PRTS 包和所需 `zod` 封入官方内置运行时，重新生成完整性清单，再生成未签名的 Electron 应用目录。
+新版构建器使用独立 `.build/dsh-electron-current` 源码副本，在固定提交上编译官方 Desktop 并保留 PRTS 窗口控制样式。它将本地 PRTS 包和所需的固定版本运行时依赖封入官方内置运行时，重新生成完整性清单，再生成未签名的 Electron 应用目录。
 源码副本也会将首次启动的欢迎页、登录窗口和 Windows 任务栏标题设为 PRTS Terrarchive；欢迎页使用本仓库的 PRTS 插画与不透明背景。更新这些桌面界面后必须运行一次不带 `-SkipDshBuild` 的完整构建，缓存构建只会复用旧的前端资源。
 官方的 `prepare:package` 要求本地 `apps/desktop/.env.windows`，构建器会在源码副本缺少该文件时自动写入仅供准备流程使用的占位配置；无需填写签名或发布凭据。这些占位地址不会写入便携版应用的更新配置。如已自行配置该文件，构建器会保留原内容。
 组装后检查 Windows PE 架构、内置运行时和语料，并通过官方 Desktop Host 验证 PRTS 模式、皮肤资源与语料索引；冒烟测试不调用模型。验证失败不会生成正式 ZIP。

@@ -3,9 +3,10 @@ import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
+import { createRequire } from 'node:module'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { inspectPrtsTarball } from '../electron/inject-runtime.mjs'
+import { inspectPrtsTarball, embedPrtsDependencies } from '../electron/inject-runtime.mjs'
 import { overlayCurrentBranding, overlayCurrentChrome } from '../electron/source-overlay-current.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -14,7 +15,7 @@ function put(path, body = '') {
   writeFileSync(path, body)
 }
 
-test('current Electron injection accepts only the pinned PRTS bundle and zod dependency', t => {
+test('current Electron injection accepts pinned PRTS dependencies including the legacy zod-only bundle', t => {
   const dir = mkdtempSync(join(tmpdir(), 'prts-current-package-'))
   t.after(() => rmSync(dir, { recursive: true, force: true }))
   const packageDir = join(dir, 'package')
@@ -32,6 +33,10 @@ test('current Electron injection accepts only the pinned PRTS bundle and zod dep
   assert.equal(inspectPrtsTarball(pack()).dependencies.zod, '4.4.3')
   manifest.dependencies.zod = '^4.4.3'
   assert.throws(() => inspectPrtsTarball(pack()), /zod 4\.4\.3/u)
+  manifest.dependencies = { zod: '4.4.3', 'js-yaml': '4.3.1' }
+  assert.equal(inspectPrtsTarball(pack()).dependencies['js-yaml'], '4.3.1')
+  manifest.dependencies['js-yaml'] = '^4.3.1'
+  assert.throws(() => inspectPrtsTarball(pack()), /js-yaml 4\.3\.1/u)
   manifest.dependencies = { zod: '4.4.3', unexpected: '1.0.0' }
   assert.throws(() => inspectPrtsTarball(pack()), /zod 4\.4\.3/u)
 })
@@ -85,4 +90,30 @@ test('current Desktop first-run artwork, copy and taskbar title use PRTS brandin
   assert.match(branded['packages/client/ui-settings-account/src/client/OnboardingSurface.module.css'], /background: #f7f7f4/u)
   assert.match(readFileSync(join(root, 'electron/assets/prts-onboarding.svg'), 'utf8'), /TERRA \/ ARCHIVE/u)
   assert.match(readFileSync(join(root, 'electron/assets/prts-welcome-brand.svg'), 'utf8'), /TERRARCHIVE/u)
+})
+
+test('embedded parser dependency remains usable without the build workspace', t => {
+  const dir = mkdtempSync(join(tmpdir(), 'prts-runtime-deps-'))
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  const source = join(dir, 'workspace')
+  const output = join(dir, 'plugin')
+  put(join(source, 'package.json'), '{}')
+  put(join(source, 'packages/boot/plugin-manager/package.json'), '{}')
+  put(join(source, 'apps/desktop/package.json'), '{}')
+  for (const [name, version, code] of [
+    ['zod', '4.4.3', 'module.exports = { version: "4.4.3" }'],
+    ['js-yaml', '4.3.1', 'module.exports = require("argparse")'],
+    ['argparse', '2.0.1', 'module.exports = { version: "2.0.1" }'],
+  ]) {
+    const modules = name === 'zod' ? join(source, 'node_modules') : join(source, 'apps/desktop/node_modules')
+    put(join(modules, name, 'package.json'), JSON.stringify({ name, version, main: 'index.js' }))
+    put(join(modules, name, 'index.js'), code)
+  }
+  put(join(source, 'node_modules/js-yaml/package.json'), JSON.stringify({ name: 'js-yaml', version: '4.2.0' }))
+  put(join(output, 'package.json'), '{}')
+  embedPrtsDependencies(output, source, { zod: '4.4.3', 'js-yaml': '4.3.1' })
+  rmSync(source, { recursive: true, force: true })
+  const requirePacked = createRequire(join(output, 'package.json'))
+  assert.equal(requirePacked('zod').version, '4.4.3')
+  assert.equal(requirePacked('js-yaml').version, '2.0.1', 'parser transitive dependency is embedded too')
 })

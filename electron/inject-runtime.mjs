@@ -7,6 +7,28 @@ import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { parseArgs } from 'node:util'
 
+/** Embed the supported dependency closure, including js-yaml's parser CLI dependency. */
+export function embedPrtsDependencies(plugin, source, dependencies) {
+  const copy = (name, version, resolver) => {
+    const path = dirname(realpathSync(resolver.resolve(name + '/package.json')))
+    const manifest = JSON.parse(readFileSync(join(path, 'package.json'), 'utf8'))
+    if (manifest.name !== name || manifest.version !== version) {
+      throw new Error('Prepared DSH workspace has no matching PRTS dependency: ' + name + '@' + version)
+    }
+    const destination = join(plugin, 'node_modules', name)
+    mkdirSync(dirname(destination), { recursive: true })
+    cpSync(path, destination, { recursive: true, dereference: true })
+    assertRegularPackageTree(destination)
+    return createRequire(join(path, 'package.json'))
+  }
+  copy('zod', dependencies.zod, createRequire(join(source, 'packages/boot/plugin-manager/package.json')))
+  if (dependencies['js-yaml']) {
+    // Desktop pins 4.3.1; the workspace root still pins 4.2.0.
+    const yaml = copy('js-yaml', dependencies['js-yaml'], createRequire(join(source, 'apps/desktop/package.json')))
+    copy('argparse', '2.0.1', yaml)
+  }
+}
+
 export function inspectPrtsTarball(tarball) {
   const entries = execFileSync('tar', ['-tzf', tarball], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 })
     .trim().split(/\r?\n/u)
@@ -25,10 +47,13 @@ export function inspectPrtsTarball(tarball) {
     encoding: 'utf8', maxBuffer: 1024 * 1024,
   }))
   const dependencies = manifest.dependencies ?? {}
+  const supportedDependencies = dependencies.zod === '4.4.3'
+    && Object.keys(dependencies).every(name => name === 'zod' || name === 'js-yaml')
+    && (dependencies['js-yaml'] === undefined || dependencies['js-yaml'] === '4.3.1')
   if (manifest.name !== 'prts-terrarchive' || typeof manifest.version !== 'string'
     || manifest.dsh?.bundle?.patch !== './cordis.patch.yml'
-    || Object.keys(dependencies).length !== 1 || dependencies.zod !== '4.4.3') {
-    throw new Error('PRTS tarball must be the pinned prts-terrarchive Desktop bundle with zod 4.4.3')
+    || !supportedDependencies) {
+    throw new Error('PRTS tarball must be the pinned prts-terrarchive Desktop bundle with zod 4.4.3 and optional js-yaml 4.3.1')
   }
   return manifest
 }
@@ -84,17 +109,7 @@ export async function injectPortableRuntime({ dshSource, tarball }) {
     const plugin = join(runtime, 'node_modules', packed.name)
     rmSync(plugin, { recursive: true, force: true })
     cpSync(join(directory, 'package'), plugin, { recursive: true })
-    // The npm tarball does not contain dependencies. Embed the exact installed
-    // zod release under PRTS so the offline Host can resolve direct imports.
-    const requireDsh = createRequire(join(source, 'packages/boot/plugin-manager/package.json'))
-    const zodPath = dirname(realpathSync(requireDsh.resolve('zod/package.json')))
-    const zodManifest = JSON.parse(readFileSync(join(zodPath, 'package.json'), 'utf8'))
-    if (zodManifest.name !== 'zod' || zodManifest.version !== packed.dependencies.zod) {
-      throw new Error('Prepared DSH workspace has no matching PRTS zod dependency')
-    }
-    mkdirSync(join(plugin, 'node_modules'), { recursive: true })
-    cpSync(zodPath, join(plugin, 'node_modules', 'zod'), { recursive: true, dereference: true })
-    assertRegularPackageTree(join(plugin, 'node_modules', 'zod'))
+    embedPrtsDependencies(plugin, source, packed.dependencies)
     normalizeModuleManifests(plugin)
     const dshManifestPath = join(runtime, 'node_modules', '@deepseek-ai', 'dsh', 'package.json')
     const dshManifest = JSON.parse(readFileSync(dshManifestPath, 'utf8'))
