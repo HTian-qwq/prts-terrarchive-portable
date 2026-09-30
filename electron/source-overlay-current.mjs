@@ -106,6 +106,15 @@ export function applyCurrentChromeOverlay(dshSource) {
   const commit = execFileSync('git', ['-C', target, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()
   if (commit !== versions.dsh.commit) throw new Error('Current Desktop source does not match the pinned commit')
   const desktop = join(target, 'apps/desktop')
+  // 缓存源码树可能残留旧版本 overlay 的修改；先从 pinned HEAD 恢复所有待改文件，
+  // 保证锚点始终在原始内容上匹配（overlay 自身演进后旧插入文本不再能被识别为已应用）。
+  const overlaid = [
+    'apps/desktop/src/main.ts',
+    'apps/desktop/src/preload-app.ts',
+    'apps/desktop/src/preload-windows.ts',
+    ...Object.keys(BRANDING_CHANGES),
+  ]
+  execFileSync('git', ['-C', target, 'checkout', '--', ...overlaid], { stdio: 'inherit' })
   const files = ['src/main.ts', 'src/preload-app.ts', 'src/preload-windows.ts'].map(file => {
     const path = join(desktop, file)
     return { path, body: overlayCurrentChrome(file, readFileSync(path, 'utf8')) }
