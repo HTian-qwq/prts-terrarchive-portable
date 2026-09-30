@@ -25,6 +25,9 @@ const profile = prepareCurrentProfile(home)
 const environment = {
   ...process.env,
   DSH_HOME: home,
+  // 官方 Electron 主进程（lib/main.js）拉起 Host 时会注入 DSH_CLIENT_VERSION；
+  // 0.2.0 的 desktop-product-telemetry 必填 serviceVersion 读取该变量，冒烟直连 Host 必须自带。
+  DSH_CLIENT_VERSION: release.dshVersion,
   PRTS_PORTABLE: '1',
   PRTS_CORPUS_RELEASES_DIR: join(artifact, 'corpus', 'releases'),
 }
