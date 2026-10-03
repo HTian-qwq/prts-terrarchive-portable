@@ -124,6 +124,15 @@ export function applyCurrentChromeOverlay(dshSource) {
     return { path, body: overlayCurrentBranding(file, readFileSync(path, 'utf8')) }
   })
   for (const { path, body } of [...files, ...branding]) writeFileSync(path, body)
+  // 上游 0.2.0-rc.1 的 primary-runtime lock 把 openpyxl 的 wheel 文件名写成了
+  // py3-none-any，PyPI 实际是 py2.py3-none-any（sha256 与 lock 一致）。构建前修正，
+  // 否则 prepare:runtime 从 CDN 拿到 NoSuchKey 的 XML 导致哈希校验失败。
+  const runtimeLock = join(target, 'scripts/primary-runtime/lock.json')
+  if (existsSync(runtimeLock)) {
+    const lockRaw = readFileSync(runtimeLock, 'utf8')
+    const fixedLock = lockRaw.replace('openpyxl-3.1.5-py3-none-any.whl', 'openpyxl-3.1.5-py2.py3-none-any.whl')
+    if (fixedLock !== lockRaw) writeFileSync(runtimeLock, fixedLock)
+  }
   copyFileSync(join(builder, 'electron/assets/prts-onboarding.svg'),
     join(target, 'packages/client/ui-settings-account/src/client/assets/prts-onboarding.svg'))
   copyFileSync(join(builder, 'electron/assets/prts-welcome-brand.svg'),
