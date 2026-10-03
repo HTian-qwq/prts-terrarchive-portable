@@ -58,6 +58,9 @@ if ($LASTEXITCODE -ne 0 -or $BuildPlatform -ne 'win32' -or $BuildArchitecture -n
 # Electron 运行时默认走 npmmirror 镜像：@electron/get 的 fetch 不认 HTTP(S)_PROXY，
 # 直连 github 会被污染解析卡死（TCP 通但 0 字节）。窗口没显式设置时兜底。
 if (-not $env:ELECTRON_MIRROR) { $env:ELECTRON_MIRROR = 'https://npmmirror.com/mirrors/electron/' }
+# DSH 0.2.0 primary-runtime 用裸 fetch 下载 Python/Node 运行时（github/nodejs/PyPI）。
+# Node >=22.19 支持 NODE_USE_ENV_PROXY 让 fetch 走 HTTP(S)_PROXY；设了代理就自动启用。
+if ($env:HTTPS_PROXY -and -not $env:NODE_USE_ENV_PROXY) { $env:NODE_USE_ENV_PROXY = '1' }
 $BuildVersionText = & $Node --version
 if ($LASTEXITCODE -ne 0) { throw 'The Node.js build tool could not start.' }
 $BuildVersion = [version]$BuildVersionText.Trim().TrimStart('v')
