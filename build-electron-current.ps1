@@ -1,4 +1,4 @@
-﻿param(
+param(
     [string]$ToolsRoot = (Join-Path (Split-Path -Parent $PSScriptRoot) '.tools'),
     [string]$PluginPath = (Join-Path (Split-Path -Parent $PSScriptRoot) 'prts-terrarchive'),
     [string]$LocalDshSource = '',
@@ -55,6 +55,9 @@ $BuildArchitecture = & $Node -p process.arch
 if ($LASTEXITCODE -ne 0 -or $BuildPlatform -ne 'win32' -or $BuildArchitecture -ne 'x64') {
     throw 'Use Windows x64 Node.js to build this release.'
 }
+# Electron 运行时默认走 npmmirror 镜像：@electron/get 的 fetch 不认 HTTP(S)_PROXY，
+# 直连 github 会被污染解析卡死（TCP 通但 0 字节）。窗口没显式设置时兜底。
+if (-not $env:ELECTRON_MIRROR) { $env:ELECTRON_MIRROR = 'https://npmmirror.com/mirrors/electron/' }
 $BuildVersionText = & $Node --version
 if ($LASTEXITCODE -ne 0) { throw 'The Node.js build tool could not start.' }
 $BuildVersion = [version]$BuildVersionText.Trim().TrimStart('v')
